@@ -150,10 +150,8 @@ class TestVM(unittest.TestCase):
         except VMTypeException:
             self.fail("check_pair raised VMTypeException unexpectedly!")
 
-
-    def test_check_pair(self):
+    def test_stack_top(self):
         vm = VM()
-        vm._reset_stack()
 
         b = 2
         vm.push(1)
