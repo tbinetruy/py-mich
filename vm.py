@@ -117,6 +117,20 @@ class VM:
         self._debug()
         return el
 
+    def swap(self):
+        if len(self.stack) < 2:
+            raise VMStackException("Cannot swap less than two elements.")
+
+        min_sp = self.get_init_sp() + 2
+        if self.sp < min_sp:
+            raise VMStackException("Stack pointer needs to be at least " + str(min_sp))
+
+        cache_current_el = self.stack[self.sp]
+        cache_previous_el = self.stack[self.sp - 1]
+        self.stack[self.sp] = cache_previous_el
+        self.stack[self.sp - 1] = cache_current_el
+
+
 class TestVM(unittest.TestCase):
     def test_check_pair(self):
         vm = VM()
@@ -235,6 +249,36 @@ class TestVM(unittest.TestCase):
         vm.make_pair(a, b)
         cdr = vm.cdr()
         self.assertEqual(vm._stack_top(), b)
+
+    def test_swap(self):
+        vm = VM()
+        a, b, c = 1, 2, 3
+
+        # Raises if stack too small
+        self.assertRaises(VMStackException, vm.swap)
+        vm.push(a)
+        self.assertRaises(VMStackException, vm.swap)
+
+        # swaps top of stack
+        vm.push(b)
+        vm.push(c)
+        vm.swap()
+        self.assertEqual(vm.stack, [1, 3, 2])
+
+        # swaps inside stack
+        vm._reset_stack()
+        vm.push(a)
+        vm.push(b)
+        vm.push(c)
+        vm.decrement_sp()
+        vm.swap()
+        self.assertEqual(vm.stack, [2, 1, 3])
+
+        # Raises if sp < 2
+        vm.decrement_sp()
+        vm.decrement_sp()
+        vm.decrement_sp()
+        self.assertRaises(VMStackException, vm.swap)
 
 suite = unittest.defaultTestLoader.loadTestsFromTestCase(TestVM)
 unittest.TextTestRunner().run(suite)
