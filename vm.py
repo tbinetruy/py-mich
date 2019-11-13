@@ -130,6 +130,13 @@ class VM:
         self.stack[self.sp] = cache_previous_el
         self.stack[self.sp - 1] = cache_current_el
 
+    def dup(self):
+        if len(self.stack) < 1:
+            raise VMStackException("Cannot duplicate on an empty stack")
+
+        self.stack.insert(self.sp, self.stack[self.sp])
+        self.increment_sp()
+
 
 class TestVM(unittest.TestCase):
     def test_check_pair(self):
@@ -279,6 +286,20 @@ class TestVM(unittest.TestCase):
         vm.decrement_sp()
         vm.decrement_sp()
         self.assertRaises(VMStackException, vm.swap)
+
+    def test_dup(self):
+        vm = VM()
+
+        self.assertRaises(VMStackException, vm.dup)
+
+        a, b, c = 1, 2, 3
+        vm.push(a)
+        vm.push(b)
+        vm.push(c)
+        vm.decrement_sp()
+        vm.dup()
+        self.assertEqual(vm.stack, [a, b, b, c])
+        self.assertEqual(vm.sp, vm.get_init_sp() + 3)
 
 suite = unittest.defaultTestLoader.loadTestsFromTestCase(TestVM)
 unittest.TextTestRunner().run(suite)
