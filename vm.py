@@ -5,6 +5,17 @@ from vm_types import Pair
 
 ph = 42  # placeholder
 
+
+class VMStackException(Exception):
+    """Raised when stack error occurs
+
+    Attributes:
+        message -- error message
+    """
+
+    def __init__(self, message):
+        self.message = message
+
 class VMTypeException(Exception):
     """Raised when type error occurs
 
@@ -52,6 +63,11 @@ class VM:
     def _stack_top(self):
         return self.stack[-1]
 
+    def _stack_at_sp(self):
+        return self.stack[self.sp] \
+            if self.sp >= 0 or self.sp >= len(self.stack) \
+            else self.get_init_sp()
+
     def _check_pair(self):
         expected_t = self._stack_top().__class__
         actual_t = Pair(ph, ph).__class__
@@ -78,13 +94,26 @@ class VM:
         self.sp += 1
 
     def push(self, val):
-        self.stack.append(val)
+        self.stack.insert(self.sp + 1, val)
         self.increment_sp()
         self._debug()
 
     def pop(self):
-        el = self.stack.pop()
-        self.decrement_sp()
+        """Removes and returns the element int the stack at the
+        stack pointer location and decrements it *unless* sp is the
+        bottom of a non-empty stack in which case it does not change."""
+        if not len(self.stack):
+            raise VMStackException("Cannot pop an empty stack!")
+
+        el = self._stack_at_sp()
+        del(self.stack[self.sp])
+
+        do_not_decrement = self.sp == self.get_init_sp() + 1 and len(self.stack)
+        if do_not_decrement:
+            pass
+        else:
+            self.decrement_sp()
+
         self._debug()
         return el
 
@@ -111,6 +140,14 @@ class TestVM(unittest.TestCase):
 
         self.assertEqual(vm._stack_top(), b)
 
+    def test_stack_at_sp(self):
+        vm = VM()
+        a, b = 1, 2
+        vm.push(a)
+        vm.push(b)
+        vm.decrement_sp()
+        self.assertEqual(vm._stack_at_sp(), a)
+
     def test_reset_stack(self):
         vm = VM()
         vm._reset_stack()
@@ -133,18 +170,45 @@ class TestVM(unittest.TestCase):
     def test_push(self):
         vm = VM()
 
-        vm.push(1)
-        vm.push(2)
+        a, b, c = 1, 2, 3
+        vm.push(a)
+        vm.push(b)
         # stack grows towards larger addresses
-        self.assertEqual(vm.stack, [1, 2])
+        self.assertEqual(vm.stack, [a, b])
+
+        vm.decrement_sp()
+        vm.push(c)
+        self.assertEqual(vm.stack, [a, c, b])
 
     def test_pop(self):
         vm = VM()
+        a, b, c = 1, 2, 3
 
-        vm.push(1)
-        vm.push(2)
+        # check that poping empty stack raises
+        self.assertRaises(VMStackException, vm.pop)
+
+        ### check that we can pop on top of the stack
+        vm.push(a)
+        vm.push(b)
         vm.pop()
-        self.assertEqual(vm.stack, [1])
+        self.assertEqual(vm.stack, [a])
+        self.assertEqual(vm.sp, VM.get_init_sp() + 1)
+
+        ### check that we can pop inside the stack
+
+        # case 1: sp = 0 but stack is not empty => we keep sp untouched
+        vm.push(c)
+        vm.decrement_sp()
+        vm.pop()
+        self.assertEqual(vm.stack, [c])
+        self.assertEqual(vm.sp, VM.get_init_sp() + 1)
+
+        # case 1: sp != 0 => we keep decrement sp
+        vm.push(b)
+        vm.push(a)
+        vm.decrement_sp()
+        vm.pop()
+        self.assertEqual(vm.stack, [c, a])
         self.assertEqual(vm.sp, VM.get_init_sp() + 1)
 
     def test_make_pair(self):
