@@ -45,6 +45,7 @@ class VM:
     def __init__(self, isDebug=True):
         self.isDebug = isDebug
         self.instruction_mapping = {
+            "ADD": self.add,
             "CAR": self.car,
             "CDR": self.cdr,
             "DIP": self.decrement_sp,
@@ -98,6 +99,12 @@ class VM:
         actual_t = Pair(ph, ph).__class__
         if expected_t != actual_t:
             raise VMTypeException(expected_t, actual_t, "Car requires a pair")
+
+    def add(self):
+        self._assert_min_stack_length(2)
+        a = self.pop()
+        b = self.stack[self.sp]
+        self.stack[self.sp] = a + b
 
     def car(self):
         self._check_pair()
@@ -335,6 +342,23 @@ class TestVM(unittest.TestCase):
         vm.dup()
         self.assertEqual(vm.stack, [a, b, b, c])
         self.assertEqual(vm.sp, vm.get_init_sp() + 3)
+
+    def test_add(self):
+        vm = VM()
+
+        a, b, c, d = 1, 2, 3, 4
+        vm.push(a)
+        vm.push(b)
+        vm.push(c)
+        vm.push(d)
+        vm.add()
+        self.assertEqual(vm.stack, [a, b, c + d])
+        vm.decrement_sp()
+        vm.add()
+        self.assertEqual(vm.stack, [a + b, c + d])
+        vm.add()
+        self.assertEqual(vm.stack, [a + b + c + d])
+
 
 suite = unittest.defaultTestLoader.loadTestsFromTestCase(TestVM)
 unittest.TextTestRunner().run(suite)
