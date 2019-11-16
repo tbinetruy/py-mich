@@ -1,5 +1,7 @@
 import unittest
 
+from typing import Tuple, List, Callable, Dict
+
 from vm_types import Pair
 
 
@@ -42,8 +44,24 @@ class VM:
 
     def __init__(self, isDebug=True):
         self.isDebug = isDebug
+        self.instruction_mapping = {
+            "CAR": self.car,
+            "CDR": self.cdr,
+            "DIP": self.decrement_sp,
+            "DROP": self.pop,
+            "DUP": self.dup,
+            "IIP": self.increment_sp,
+            "PAIR": self.make_pair,
+            "PUSH": self.push,
+            "SWAP": self.swap,
+        }
 
         self._reset_stack()
+
+    def _run_instructions(self, instructions: Tuple[str, List[any], Dict[str, any]]) -> None:
+        for instr_name, args, kwargs in instructions:
+            instr = self.instruction_mapping[instr_name]
+            instr(*args, **kwargs)
 
     def _reset_stack(self):
         self.stack = self.get_init_stack()
@@ -139,6 +157,16 @@ class VM:
 
 
 class TestVM(unittest.TestCase):
+    def test_run_instructions(self):
+        vm = VM()
+        instructions = [
+            ('PUSH', [1], {}),
+            ('PUSH', [2], {}),
+            ('SWAP', [], {}),
+        ]
+        vm._run_instructions(instructions)
+        self.assertEqual(vm.stack, [2, 1])
+
     def test_check_pair(self):
         vm = VM()
         vm._reset_stack()
