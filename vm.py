@@ -86,7 +86,14 @@ class VM:
             if self.sp >= 0 or self.sp >= len(self.stack) \
             else self.get_init_sp()
 
+    def _assert_min_stack_length(self, min_len: int) -> None:
+        stack_length = len(self.stack)
+        if stack_length < min_len:
+            raise VMStackException("Stack too short, need to be at least of length " + str(min_len) + " but is currently " + str(stack_length))
+
     def _check_pair(self):
+        self._assert_min_stack_length(1)
+
         expected_t = self._stack_top().__class__
         actual_t = Pair(ph, ph).__class__
         if expected_t != actual_t:
@@ -171,12 +178,14 @@ class TestVM(unittest.TestCase):
         vm = VM()
         vm._reset_stack()
 
+        vm.push(1)
         self.assertRaises(VMTypeException, vm._check_pair)
         vm.make_pair(1, 2)
         try:
-            self.assertEqual(VMTypeException, vm._check_pair)
-        except VMTypeException:
+            self.assertRaises(VMTypeException, vm._check_pair)
             self.fail("check_pair raised VMTypeException unexpectedly!")
+        except AssertionError:
+            pass
 
     def test_stack_top(self):
         vm = VM()
