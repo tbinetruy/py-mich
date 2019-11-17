@@ -49,6 +49,7 @@ class VM:
             "CAR": self.car,
             "CDR": self.cdr,
             "DIP": self.decrement_sp,
+            "DIG": self.dig,
             "DROP": self.pop,
             "DUP": self.dup,
             "IIP": self.increment_sp,
@@ -168,6 +169,12 @@ class VM:
 
         self.stack.insert(self.sp, self.stack[self.sp])
         self.increment_sp()
+
+    def dig(self):
+        tmp = self.stack[self.sp]
+        del(self.stack[self.sp])
+        self.stack += [tmp]
+        self.sp = len(self.stack) - 1
 
 
 class TestVM(unittest.TestCase):
@@ -358,6 +365,18 @@ class TestVM(unittest.TestCase):
         self.assertEqual(vm.stack, [a + b, c + d])
         vm.add()
         self.assertEqual(vm.stack, [a + b + c + d])
+
+    def test_dig(self):
+        vm = VM()
+
+        a, b, c = 1, 2, 3
+        vm.push(a)
+        vm.push(b)
+        vm.push(c)
+        vm.decrement_sp()
+        vm.decrement_sp()
+        vm.dig()
+        self.assertEqual(vm.stack, [b, c, a])
 
 
 suite = unittest.defaultTestLoader.loadTestsFromTestCase(TestVM)
