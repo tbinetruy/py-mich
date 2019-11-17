@@ -30,7 +30,7 @@ vm.stack, vm.sp
 #+RESULTS:
 | (1 2 3 6) | 3 |
 
-As we can see, all three declared variables have been added to the stack along with the value for ~a + b + c~.
+As we can see, all three declared variables have been added to the stack along with the value for ~a + b + c~. The stack pointer points to the top of the stack at index 3, which corresponds to 6 (the stack grows towards larger memory addresses).
 
 We can see what the python code compiled to as follows:
 
