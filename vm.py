@@ -2,7 +2,7 @@ import unittest
 
 from typing import Tuple, List, Callable, Dict
 
-from vm_types import Pair
+from vm_types import Pair, Instr
 
 
 ph = 42  # placeholder
@@ -70,10 +70,10 @@ class VM:
 
         self._reset_stack()
 
-    def _run_instructions(self, instructions: Tuple[str, List[any], Dict[str, any]]) -> None:
-        for instr_name, args, kwargs in instructions:
-            instr = self.instruction_mapping[instr_name]
-            instr(*args, **kwargs)
+    def _run_instructions(self, instructions: List[Instr]) -> None:
+        for instr in instructions:
+            instr_function = self.instruction_mapping[instr.name]
+            instr_function(*instr.args, **instr.kwargs)
 
     def _reset_stack(self):
         self.stack = self.get_init_stack()
@@ -118,6 +118,8 @@ class VM:
         b = self.stack[self.sp]
         self.stack[self.sp] = a + b
 
+    def get_f_from_instr_name(self, instr_name: str):
+        return self.instruction_mapping[instr_name]
 
     @debug
     def car(self):
@@ -199,13 +201,14 @@ class VM:
         self.sp = len(self.stack) - 1
 
 
+
 class TestVM(unittest.TestCase):
     def test_run_instructions(self):
         vm = VM()
         instructions = [
-            ('PUSH', [1], {}),
-            ('PUSH', [2], {}),
-            ('SWAP', [], {}),
+            Instr('PUSH', [1], {}),
+            Instr('PUSH', [2], {}),
+            Instr('SWAP', [], {}),
         ]
         vm._run_instructions(instructions)
         self.assertEqual(vm.stack, [2, 1])
