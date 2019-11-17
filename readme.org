@@ -9,7 +9,7 @@ We'd like to compile Python code to Tezos' Micelson bytecode using Python's  ~as
 
 * Usage
 
-So far, only number variables and addition has been implemented in the compiler :D I'll update the readme as things evolve.
+So far, only number variables and additions have been implemented in the compiler :D I'll update the readme as things evolve.
 
 Here is an example of how to declare and call variables:
 
