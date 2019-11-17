@@ -2,8 +2,8 @@
 
 We'd like to compile Python code to Tezos' Micelson bytecode using Python's  ~ast~ module. So fare, what has been implemented is:
 
-- a virtual machine with a Michelson-like bytecode. Ideally it would need to be identical rather than inspired, I will be working on this in the following weeks [1]. The VM is in `vm.py`.
-- a compiler backend from a Python ast to the Michelson implemented in the VM to speed up development and allow easy testing. The compiler is in `compiler.py`.
+- a virtual machine with a Michelson-like bytecode. Ideally it would need to be identical rather than inspired, I will be working on this in the following weeks [1]. The VM is in ~vm.py~.
+- a compiler backend from a Python ast to the Michelson implemented in the VM to speed up development and allow easy testing. The compiler is in ~compiler.py~.
 
 [1] https://tezos.gitlab.io/whitedoc/michelson.html#variable-annotations
 
@@ -30,7 +30,7 @@ vm.stack, vm.sp
 #+RESULTS:
 | (1 2 3 6) | 3 |
 
-As we can see, all three declared variables have been added to the stack along with the value for `a + b + c`.
+As we can see, all three declared variables have been added to the stack along with the value for ~a + b + c~.
 
 We can see what the python code compiled to as follows:
 
