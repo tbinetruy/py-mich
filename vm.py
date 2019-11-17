@@ -406,5 +406,6 @@ class TestVM(unittest.TestCase):
         self.assertEqual(vm.stack, [b, c, a])
 
 
-suite = unittest.defaultTestLoader.loadTestsFromTestCase(TestVM)
-unittest.TextTestRunner().run(suite)
+if __name__ == "__main__":
+    suite = unittest.defaultTestLoader.loadTestsFromTestCase(TestVM)
+    unittest.TextTestRunner().run(suite)

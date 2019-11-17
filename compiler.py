@@ -115,7 +115,7 @@ a + b + c
         self.assertEqual(vm.sp, 3)
 
 
-
-for TestSuite in [TestCompilerUnit, TestCompilerIntegration]:
-    suite = unittest.defaultTestLoader.loadTestsFromTestCase(TestSuite)
-    unittest.TextTestRunner().run(suite)
+if __name__ == "__main__":
+    for TestSuite in [TestCompilerUnit, TestCompilerIntegration]:
+        suite = unittest.defaultTestLoader.loadTestsFromTestCase(TestSuite)
+        unittest.TextTestRunner().run(suite)
