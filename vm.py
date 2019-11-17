@@ -33,6 +33,16 @@ class VMTypeException(Exception):
         self.message = message
 
 
+def debug(in_func):
+    def out_func(*args, **kwargs):
+        print(in_func, args, kwargs)
+        self = args[0]
+        result = in_func(*args, **kwargs)
+        self._debug()
+        return result
+    return out_func
+
+
 class VM:
     @staticmethod
     def get_init_stack():
@@ -101,36 +111,45 @@ class VM:
         if expected_t != actual_t:
             raise VMTypeException(expected_t, actual_t, "Car requires a pair")
 
+    @debug
     def add(self):
         self._assert_min_stack_length(2)
         a = self.pop()
         b = self.stack[self.sp]
         self.stack[self.sp] = a + b
 
+
+    @debug
     def car(self):
         self._check_pair()
         pair = self.pop()
         self.push(pair.car)
 
+    @debug
     def cdr(self):
         self._check_pair()
         pair = self.pop()
         self.push(pair.cdr)
 
-    def make_pair(self, car, cdr):
+    @debug
+    def make_pair(self, car: any, cdr: any):
         self.push(Pair(car, cdr))
 
-    def decrement_sp(self):
-        self.sp -= 1
+    @debug
+    def decrement_sp(self, delta: int = 1):
+        self.sp -= delta
 
-    def increment_sp(self):
-        self.sp += 1
+    @debug
+    def increment_sp(self, delta: int = 1):
+        self.sp += delta
 
+    @debug
     def push(self, val):
         self.stack.insert(self.sp + 1, val)
         self.increment_sp()
         self._debug()
 
+    @debug
     def pop(self):
         """Removes and returns the element int the stack at the
         stack pointer location and decrements it *unless* sp is the
@@ -150,6 +169,7 @@ class VM:
         self._debug()
         return el
 
+    @debug
     def swap(self):
         if len(self.stack) < 2:
             raise VMStackException("Cannot swap less than two elements.")
@@ -163,6 +183,7 @@ class VM:
         self.stack[self.sp] = cache_previous_el
         self.stack[self.sp - 1] = cache_current_el
 
+    @debug
     def dup(self):
         if len(self.stack) < 1:
             raise VMStackException("Cannot duplicate on an empty stack")
@@ -170,6 +191,7 @@ class VM:
         self.stack.insert(self.sp, self.stack[self.sp])
         self.increment_sp()
 
+    @debug
     def dig(self):
         tmp = self.stack[self.sp]
         del(self.stack[self.sp])
