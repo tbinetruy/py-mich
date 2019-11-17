@@ -54,6 +54,8 @@ class VM:
 
     def __init__(self, isDebug=True):
         self.isDebug = isDebug
+
+        # See: https://tezos.gitlab.io/whitedoc/michelson.html
         self.instruction_mapping = {
             "ADD": self.add,
             "CAR": self.car,
