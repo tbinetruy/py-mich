@@ -102,7 +102,7 @@ class VM:
 
     def _stack_at_sp(self):
         return self.stack[self.sp] \
-            if self.sp >= 0 or self.sp >= len(self.stack) \
+            if self.sp >= 0 and self.sp <= len(self.stack) \
             else self.get_init_sp()
 
     def _assert_min_stack_length(self, min_len: int) -> None:
