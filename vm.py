@@ -2,7 +2,7 @@ import unittest
 
 from typing import Tuple, List, Callable, Dict
 
-from vm_types import Pair, Instr
+from vm_types import Pair, Instr, Array
 
 
 ph = 42  # placeholder
@@ -69,6 +69,7 @@ class VM:
             "DROP": self.pop,
             "DUP": self.dup,
             "IIP": self.increment_sp,
+            "LIST": self.make_list,
             "PAIR": self.make_pair,
             "PUSH": self.push,
             "SWAP": self.swap,
@@ -142,6 +143,10 @@ class VM:
     @debug
     def make_pair(self, car: any, cdr: any):
         self.push(Pair(car, cdr))
+
+    @debug
+    def make_list(self):
+        self.push(Array([]))
 
     @debug
     def decrement_sp(self, delta: int = 1):
@@ -311,6 +316,14 @@ class TestVM(unittest.TestCase):
         vm.pop()
         self.assertEqual(vm.stack, [c, a])
         self.assertEqual(vm.sp, VM.get_init_sp() + 1)
+
+    def test_make_list(self):
+        vm = VM()
+
+        a, b = 1, 2
+        vm.make_list()
+        self.assertEqual(vm.sp, VM.get_init_sp() + 1)
+        self.assertEqual(vm.stack[-1].__class__, Array([]).__class__)
 
     def test_make_pair(self):
         vm = VM()

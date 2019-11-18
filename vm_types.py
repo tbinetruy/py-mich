@@ -1,6 +1,17 @@
 from dataclasses import dataclass
 from typing import NewType, Dict, List, Tuple, Callable
 
+
+@dataclass
+class Array:
+    """Michelson list. Called array not to conflict with `typing.List`
+    used in type annotations.
+
+    Parameters
+    ----------
+    els: python list representing the Michelson list"""
+    els: List[any]
+
 @dataclass
 class Pair:
     '''Michelson pair.
