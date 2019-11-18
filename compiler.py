@@ -11,8 +11,9 @@ from helpers import ast_to_tree
 
 
 class Compiler:
-    def __init__(self, src):
+    def __init__(self, src, isDebug=True):
         self.ast = ast.parse(src)
+        self.isDebug = isDebug
 
     def print_ast(self):
         print(pprint.pformat(ast_to_tree(self.ast)))
@@ -89,7 +90,8 @@ class Compiler:
         if type(node_ast) == ast.Add:
             instructions += self.compile_add(node_ast, e)
 
-        print(e)
+        if self.isDebug:
+            print(e)
         return instructions
 
 
@@ -101,14 +103,14 @@ class TestCompilerUnit(unittest.TestCase):
 
 class TestCompilerIntegration(unittest.TestCase):
     def test_store_vars_and_add(self):
-        vm = VM()
+        vm = VM(isDebug=False)
         source = """
 a = 1
 b = 2
 c = a + b + b
 a + b + c
         """
-        c = Compiler(source)
+        c = Compiler(source, isDebug=False)
         instructions = c.compile(c.ast)
         vm._run_instructions(instructions)
         self.assertEqual(vm.stack, [1, 2, 5, 8])

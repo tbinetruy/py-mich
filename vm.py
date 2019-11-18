@@ -35,9 +35,13 @@ class VMTypeException(Exception):
 
 def debug(in_func):
     def out_func(*args, **kwargs):
-        print(in_func, args, kwargs)
         self = args[0]
+
+        if self.isDebug:
+            print(in_func, args, kwargs)
+
         result = in_func(*args, **kwargs)
+
         self._debug()
         return result
     return out_func
