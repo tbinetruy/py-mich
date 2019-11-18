@@ -149,6 +149,19 @@ class VM:
         self.push(Array([]))
 
     @debug
+    def append_before_list(self):
+        self._assert_min_stack_length(1)
+
+        el = self.pop()
+
+        actual_t = self._stack_top().__class__
+        expected_t = Array([]).__class__
+        if expected_t != actual_t:
+            raise VMTypeException(expected_t, actual_t, "CONS requires a list")
+
+        self.stack[self.sp] = Array([el] + self._stack_at_sp().els)
+
+    @debug
     def decrement_sp(self, delta: int = 1):
         self.sp -= delta
 
@@ -421,6 +434,15 @@ class TestVM(unittest.TestCase):
         vm.decrement_sp()
         vm.dig()
         self.assertEqual(vm.stack, [b, c, a])
+
+    def test_append_before_list(self):
+        vm = VM()
+
+        a = 1
+        vm.make_list()
+        vm.push(a)
+        vm.append_before_list()
+        self.assertEqual(vm.stack[0].els, [a])
 
 
 if __name__ == "__main__":
