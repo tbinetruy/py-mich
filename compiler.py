@@ -67,10 +67,16 @@ class Compiler:
         op = self.compile(t.op, e)
         return left + right + op
 
-    def compile_add(self, t: ast.Name, e: Env) -> List[Instr]:
+    def compile_add(self, t: ast.Add, e: Env) -> List[Instr]:
         e.sp -= 1  # Account for ADD
         return [
             Instr('ADD', [], {}),
+        ]
+
+    def compile_list(self, l: ast.List, e: Env) -> List[Instr]:
+        e.sp += 1  # Account for pushing list
+        return [
+            Instr('LIST', [], {}),
         ]
 
     def compile(self, node_ast,  e: Env = Env({}, -1)) -> List[Instr]:
@@ -89,6 +95,8 @@ class Compiler:
             instructions += self.compile_binop(node_ast, e)
         if type(node_ast) == ast.Add:
             instructions += self.compile_add(node_ast, e)
+        if type(node_ast) == ast.List:
+            instructions += self.compile_list(node_ast, e)
 
         if self.isDebug:
             print(e)
@@ -96,6 +104,15 @@ class Compiler:
 
 
 class TestCompilerUnit(unittest.TestCase):
+    def test_create_list(self):
+        vm = VM()
+        source = "[]"
+        c = Compiler(source)
+        instructions = c.compile(c.ast)
+        vm._run_instructions(instructions)
+        self.assertEqual(vm.stack[0].els, [])
+        self.assertEqual(vm.sp, 0)
+
     def test_print_ast(self):
         pass
 
