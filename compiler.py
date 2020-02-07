@@ -53,7 +53,7 @@ class Compiler:
     def compile_num(self, num: ast.Num, e: Env) -> List[Instr]:
         e.sp += 1  # Account for PUSH
         return [
-            Instr('PUSH', [num.n], {}),
+            Instr('PUSH', [num.value], {}),
         ]
 
     @debug
@@ -105,7 +105,7 @@ class Compiler:
             instructions += self.compile_assign(node_ast, e)
         if type(node_ast) == ast.Expr:
             instructions += self.compile_expr(node_ast, e)
-        if type(node_ast) == ast.Num:
+        if type(node_ast) == ast.Constant:
             instructions += self.compile_num(node_ast, e)
         if type(node_ast) == ast.Name:
             instructions += self.compile_name(node_ast, e)
