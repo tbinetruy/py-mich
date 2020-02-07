@@ -10,6 +10,15 @@ from vm import VM
 from helpers import ast_to_tree
 
 
+def debug(cb):
+    def f(*args, **kwargs):
+        self = args[0]
+        if self.isDebug:
+            print(cb.__name__)
+
+        return cb(*args, **kwargs)
+    return f
+
 class Compiler:
     def __init__(self, src, isDebug=True):
         self.ast = ast.parse(src)
@@ -27,6 +36,7 @@ class Compiler:
 
         return instructions
 
+    @debug
     def compile_assign(self, assign: ast.Assign, e: Env) -> List[Instr]:
         instructions: List[Instr] = []
         var_name = assign.targets[0].id
@@ -35,15 +45,18 @@ class Compiler:
         e.vars[var_name] = e.sp
         return instructions
 
+    @debug
     def compile_expr(self, expr: ast.Expr, e: Env) -> List[Instr]:
         return self.compile(expr.value, e)
 
+    @debug
     def compile_num(self, num: ast.Num, e: Env) -> List[Instr]:
         e.sp += 1  # Account for PUSH
         return [
             Instr('PUSH', [num.n], {}),
         ]
 
+    @debug
     def compile_name(self, name: ast.Name, e: Env) -> List[Instr]:
         var_name = name.id
         if type(name.ctx) == ast.Load:
@@ -61,18 +74,21 @@ class Compiler:
         else:
             return NotImplementedError
 
+    @debug
     def compile_binop(self, t: ast.Name, e: Env) -> List[Instr]:
         left = self.compile(t.left, e)
         right = self.compile(t.right, e)
         op = self.compile(t.op, e)
         return left + right + op
 
+    @debug
     def compile_add(self, t: ast.Add, e: Env) -> List[Instr]:
         e.sp -= 1  # Account for ADD
         return [
             Instr('ADD', [], {}),
         ]
 
+    @debug
     def compile_list(self, l: ast.List, e: Env) -> List[Instr]:
         e.sp += 1  # Account for pushing list
         return [
@@ -83,6 +99,8 @@ class Compiler:
         instructions: List[Instr] = []
         if type(node_ast) == ast.Module:
             instructions += self.compile_module(node_ast, e)
+            if self.isDebug:
+                self.print_instructions(instructions)
         if type(node_ast) == ast.Assign:
             instructions += self.compile_assign(node_ast, e)
         if type(node_ast) == ast.Expr:
@@ -102,12 +120,16 @@ class Compiler:
             print(e)
         return instructions
 
+    @staticmethod
+    def print_instructions(instructions):
+        print("\n".join([f"{i.name} {i.args} {i.kwargs}" for i in instructions]))
+
 
 class TestCompilerUnit(unittest.TestCase):
     def test_create_list(self):
-        vm = VM()
+        vm = VM(isDebug=False)
         source = "[]"
-        c = Compiler(source)
+        c = Compiler(source, isDebug=False)
         instructions = c.compile(c.ast)
         vm._run_instructions(instructions)
         self.assertEqual(vm.stack[0].els, [])
