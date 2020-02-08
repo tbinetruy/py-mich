@@ -226,14 +226,16 @@ class TestCompilerDefun(unittest.TestCase):
         vm = VM(isDebug=False)
         source = """
 def foo(a):
-    return a + 1
-foo(20)
+    b = 1
+    c = 2
+    return a + b + c
+foo(3)
         """
         c = Compiler(source, isDebug=False)
         instructions = c.compile(c.ast)
         vm._run_instructions(instructions)
-        self.assertEqual(vm.stack, [21])
-        self.assertEqual(vm.sp, 0)
+        self.assertEqual(vm.stack, [3, 1, 2, 6])
+        self.assertEqual(vm.sp, 3)
 
 
 

@@ -129,11 +129,6 @@ class VM:
         self.push(args)
         self._run_instructions(body)
 
-        # nasty stuff to get rid of arg on stack
-        return_val = self.pop() # popping args
-        self.pop()
-        self.push(return_val)
-
     @debug
     def add(self):
         self._assert_min_stack_length(2)
@@ -254,7 +249,7 @@ class TestVM(unittest.TestCase):
         vm.push(body)
         vm.push(arg)
         vm._run_instructions([Instr('EXEC', [], {})])
-        #assert body[0].args[0] + arg == vm.stack[0]
+        assert [arg, arg + 2] == vm.stack
 
     def test_run_instructions(self):
         vm = VM()
