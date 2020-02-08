@@ -5,7 +5,7 @@ from typing import List
 
 from helpers import ast_to_tree
 from vm import VM
-from vm_types import Env, Instr, Array
+from vm_types import Array, Env, Instr
 
 
 def debug(cb):
@@ -37,7 +37,7 @@ class Compiler:
     @debug
     def compile_assign(self, assign: ast.Assign, e: Env) -> List[Instr]:
         instructions: List[Instr] = []
-        var_name = assign.targets[0].id
+        var_name = assign.targets[0]
         value = assign.value
         instructions = self.compile(var_name, e) + self.compile(value, e)
         e.vars[var_name.id] = e.sp
