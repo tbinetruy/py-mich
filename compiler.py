@@ -40,7 +40,7 @@ class Compiler:
         var_name = assign.targets[0].id
         value = assign.value
         instructions = self.compile(var_name, e) + self.compile(value, e)
-        e.vars[var_name] = e.sp
+        e.vars[var_name.id] = e.sp
         return instructions
 
     @debug
@@ -56,9 +56,9 @@ class Compiler:
 
     @debug
     def compile_name(self, name: ast.Name, e: Env) -> List[Instr]:
-        var_name = name.id
+        var_name = name
         if type(name.ctx) == ast.Load:
-            var_addr = e.vars[var_name]
+            var_addr = e.vars[var_name.id]
             jump_length = e.sp - var_addr
             e.sp += 1  # Account for DUP
             return [
@@ -67,7 +67,7 @@ class Compiler:
                 Instr('DIG', [], {}),
             ]
         elif type(name.ctx) == ast.Store:
-            e.vars[var_name] = 42
+            e.vars[var_name.id] = 42
             return []
         else:
             return NotImplementedError
@@ -106,7 +106,51 @@ class Compiler:
             instructions += self.append_before_list_el(el, e)
         return instructions
 
-    def compile(self, node_ast,  e: Env = Env({}, -1)) -> List[Instr]:
+    @debug
+    def compile_defun(self, f: ast.FunctionDef, e: Env):
+        e.sp += 1  # account for body push
+
+        e.vars[f.name] = e.sp
+        e.args[f.name] = f.args.args[0].arg
+
+        func_env = e.copy()
+        func_env.vars[f.args.args[0].arg] = e.sp
+
+        return [
+            Instr('PUSH', [self.compile(f.body[0], func_env)], {})
+        ]
+
+    @debug
+    def compile_fcall(self, f: ast.FunctionDef, e: Env):
+
+        # fetch arg name for function
+        arg_name = e.args[f.func.id]
+
+        # compile arg
+        arg = self.compile(f.args[0])
+
+        # Account for pushing argument
+        e.sp += 1
+
+        # Store arg stack location
+        e.vars[arg_name] = e.sp - 1
+
+            #var_addr = e.vars[var_name.id]
+            #jump_length = e.sp - var_addr
+            #e.sp += 1  # Account for DUP
+            #return [
+            #    Instr('DIP', [jump_length], {}),
+            #    Instr('DUP', [], {}),
+            #    Instr('DIG', [], {}),
+            #]
+
+        return arg + [Instr('EXEC', [], {})]
+
+    @debug
+    def compile_return(self, r: ast.FunctionDef, e: Env):
+        return self.compile(r.value, e)
+
+    def compile(self, node_ast,  e: Env = Env({}, -1, {})) -> List[Instr]:
         instructions: List[Instr] = []
         if type(node_ast) == ast.Module:
             instructions += self.compile_module(node_ast, e)
@@ -126,6 +170,12 @@ class Compiler:
             instructions += self.compile_add(node_ast, e)
         if type(node_ast) == ast.List:
             instructions += self.compile_list(node_ast, e)
+        elif type(node_ast) == ast.FunctionDef:
+            instructions += self.compile_defun(node_ast, e)
+        elif type(node_ast) == ast.Return:
+            instructions += self.compile_return(node_ast, e)
+        elif type(node_ast) == ast.Call:
+            instructions += self.compile_fcall(node_ast, e)
 
         if self.isDebug:
             print(e)
@@ -161,6 +211,21 @@ class TestCompilerList(unittest.TestCase):
         vm._run_instructions(instructions)
         self.assertEqual(vm.stack, [Array([1, 2, 3])])
         self.assertEqual(vm.sp, 0)
+
+class TestCompilerDefun(unittest.TestCase):
+    def test_func_def(self):
+        vm = VM(isDebug=False)
+        source = """
+def foo(a):
+    return a + 1
+foo(20)
+        """
+        c = Compiler(source, isDebug=False)
+        instructions = c.compile(c.ast)
+        vm._run_instructions(instructions)
+        self.assertEqual(vm.stack, [21])
+        self.assertEqual(vm.sp, 0)
+
 
 
 class TestCompilerIntegration(unittest.TestCase):

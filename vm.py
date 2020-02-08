@@ -240,16 +240,18 @@ class VM:
 class TestVM(unittest.TestCase):
     def test_run_lambda(self):
         vm = VM()
-        body = Array([
+        body = [
+            Instr('DUP', [], {}),
             Instr('PUSH', [2], {}),
             Instr('ADD', [], {}),
-        ])
+        ]
         arg = 2
         vm.push(body)
         vm.push(arg)
+        print("auie", vm.stack)
         vm._run_instructions([Instr('EXEC', [], {})])
-        breakpoint()
-        assert body.els[0].args[0] + arg == vm.stack[0]
+        print("aiue", vm.stack)
+        #assert body[0].args[0] + arg == vm.stack[0]
 
     def test_run_instructions(self):
         vm = VM()

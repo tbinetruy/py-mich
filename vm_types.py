@@ -28,9 +28,10 @@ Addr, VarName = NewType('Address', int), NewType('VarName', str)
 class Env:
     vars: NewType('Environment', Dict[VarName, Addr])
     sp: int
+    args: NewType('Args', Dict[VarName, VarName])
 
     def copy(self):
-        return Env(self.vars.copy(), self.sp)
+        return Env(self.vars.copy(), self.sp, self.args.copy())
 
 
 @dataclass
