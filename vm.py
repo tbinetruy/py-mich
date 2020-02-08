@@ -127,7 +127,12 @@ class VM:
         args = self.pop()
         body: Array = self.pop()
         self.push(args)
-        self._run_instructions(body.els)
+        self._run_instructions(body)
+
+        # nasty stuff to get rid of arg on stack
+        return_val = self.pop() # popping args
+        self.pop()
+        self.push(return_val)
 
     @debug
     def add(self):
