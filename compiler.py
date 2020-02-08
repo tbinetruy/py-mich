@@ -156,19 +156,19 @@ class Compiler:
             instructions += self.compile_module(node_ast, e)
             if self.isDebug:
                 self.print_instructions(instructions)
-        if type(node_ast) == ast.Assign:
+        elif type(node_ast) == ast.Assign:
             instructions += self.compile_assign(node_ast, e)
-        if type(node_ast) == ast.Expr:
+        elif type(node_ast) == ast.Expr:
             instructions += self.compile_expr(node_ast, e)
-        if type(node_ast) == ast.Constant:
+        elif type(node_ast) == ast.Constant:
             instructions += self.compile_num(node_ast, e)
-        if type(node_ast) == ast.Name:
+        elif type(node_ast) == ast.Name:
             instructions += self.compile_name(node_ast, e)
-        if type(node_ast) == ast.BinOp:
+        elif type(node_ast) == ast.BinOp:
             instructions += self.compile_binop(node_ast, e)
-        if type(node_ast) == ast.Add:
+        elif type(node_ast) == ast.Add:
             instructions += self.compile_add(node_ast, e)
-        if type(node_ast) == ast.List:
+        elif type(node_ast) == ast.List:
             instructions += self.compile_list(node_ast, e)
         elif type(node_ast) == ast.FunctionDef:
             instructions += self.compile_defun(node_ast, e)
@@ -176,9 +176,14 @@ class Compiler:
             instructions += self.compile_return(node_ast, e)
         elif type(node_ast) == ast.Call:
             instructions += self.compile_fcall(node_ast, e)
+        else:
+            import ipdb; ipdb.set_trace()
+            return NotImplementedError
+
 
         if self.isDebug:
             print(e)
+
         return instructions
 
     @staticmethod
