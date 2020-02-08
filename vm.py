@@ -74,6 +74,7 @@ class VM:
             "PUSH": self.push,
             "SWAP": self.swap,
             "EXEC": self.run_lambda,
+            "CONS": self.append_before_list,
         }
 
         self._reset_stack()
@@ -459,11 +460,13 @@ class TestVM(unittest.TestCase):
     def test_append_before_list(self):
         vm = VM()
 
-        a = 1
+        a, b = 1, 2
         vm.make_list()
         vm.push(a)
         vm.append_before_list()
-        self.assertEqual(vm.stack[0].els, [a])
+        vm.push(b)
+        vm.append_before_list()
+        self.assertEqual(vm.stack[0].els, [b, a])
 
 
 if __name__ == "__main__":

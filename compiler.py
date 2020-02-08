@@ -1,13 +1,11 @@
-import unittest
 import ast
 import pprint
-
+import unittest
 from typing import List
 
-from vm_types import Env, Instr
-from vm import VM
-
 from helpers import ast_to_tree
+from vm import VM
+from vm_types import Env, Instr, Array
 
 
 def debug(cb):
@@ -89,11 +87,24 @@ class Compiler:
         ]
 
     @debug
-    def compile_list(self, l: ast.List, e: Env) -> List[Instr]:
+    def create_list(self, e: Env) -> List[Instr]:
         e.sp += 1  # Account for pushing list
         return [
             Instr('LIST', [], {}),
         ]
+
+    @debug
+    def append_before_list_el(self, el, e) -> List[Instr]:
+        # no sp chage b/c they cancel out btwn the two instructions
+        return self.compile(el, e) + [Instr('CONS', [], {})]
+
+    @debug
+    def compile_list(self, l: ast.List, e: Env) -> List[Instr]:
+        e.sp += 1  # Account for pushing list
+        instructions = self.create_list(e)
+        for el in reversed(l.elts):
+            instructions += self.append_before_list_el(el, e)
+        return instructions
 
     def compile(self, node_ast,  e: Env = Env({}, -1)) -> List[Instr]:
         instructions: List[Instr] = []
@@ -138,6 +149,18 @@ class TestCompilerUnit(unittest.TestCase):
     def test_print_ast(self):
         pass
 
+class TestCompilerList(unittest.TestCase):
+    def test_func_def(self):
+        vm = VM(isDebug=False)
+        source = """
+[1, 2, 3]
+        """
+        c = Compiler(source, isDebug=False)
+        c.print_ast()
+        instructions = c.compile(c.ast)
+        vm._run_instructions(instructions)
+        self.assertEqual(vm.stack, [Array([1, 2, 3])])
+        self.assertEqual(vm.sp, 0)
 
 
 class TestCompilerIntegration(unittest.TestCase):
