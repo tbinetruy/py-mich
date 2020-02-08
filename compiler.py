@@ -116,8 +116,12 @@ class Compiler:
         func_env = e.copy()
         func_env.vars[f.args.args[0].arg] = e.sp
 
+        instrs = []
+        for i in f.body:
+            instrs += self.compile(i, func_env)
+
         return [
-            Instr('PUSH', [self.compile(f.body[0], func_env)], {})
+            Instr("PUSH", [instrs], {}),
         ]
 
     @debug
