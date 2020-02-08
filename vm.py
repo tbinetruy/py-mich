@@ -253,9 +253,7 @@ class TestVM(unittest.TestCase):
         arg = 2
         vm.push(body)
         vm.push(arg)
-        print("auie", vm.stack)
         vm._run_instructions([Instr('EXEC', [], {})])
-        print("aiue", vm.stack)
         #assert body[0].args[0] + arg == vm.stack[0]
 
     def test_run_instructions(self):
