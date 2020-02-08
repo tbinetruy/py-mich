@@ -122,6 +122,8 @@ class VM:
 
     @debug
     def run_lambda(self):
+        self._assert_min_stack_length(2)
+
         args = self.pop()
         body: Array = self.pop()
         self.push(args)
