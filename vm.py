@@ -56,7 +56,7 @@ class VM:
     def get_init_sp():
         return -1
 
-    def __init__(self, isDebug=True):
+    def __init__(self, isDebug=False):
         self.isDebug = isDebug
 
         # See: https://tezos.gitlab.io/whitedoc/michelson.html
