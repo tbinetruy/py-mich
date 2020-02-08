@@ -73,6 +73,7 @@ class VM:
             "PAIR": self.make_pair,
             "PUSH": self.push,
             "SWAP": self.swap,
+            "EXEC": self.run_lambda,
         }
 
         self._reset_stack()
@@ -117,6 +118,13 @@ class VM:
         actual_t = Pair(ph, ph).__class__
         if expected_t != actual_t:
             raise VMTypeException(expected_t, actual_t, "Car requires a pair")
+
+    @debug
+    def run_lambda(self):
+        args = self.pop()
+        body: Array = self.pop()
+        self.push(args)
+        self._run_instructions(body.els)
 
     @debug
     def add(self):
@@ -227,6 +235,19 @@ class VM:
 
 
 class TestVM(unittest.TestCase):
+    def test_run_lambda(self):
+        vm = VM()
+        body = Array([
+            Instr('PUSH', [2], {}),
+            Instr('ADD', [], {}),
+        ])
+        arg = 2
+        vm.push(body)
+        vm.push(arg)
+        vm._run_instructions([Instr('EXEC', [], {})])
+        breakpoint()
+        assert body.els[0].args[0] + arg == vm.stack[0]
+
     def test_run_instructions(self):
         vm = VM()
         instructions = [
