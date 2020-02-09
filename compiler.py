@@ -181,8 +181,6 @@ class Compiler:
 
         func_addr = e.vars[f.func.id]
         jump_length = e.sp - func_addr
-        #e.sp += 1  # Account for DUP
-        #e.sp -= 1  # Account for DIP
         comment = [Comment(f"Moving to function {f.func.id} at {func_addr}, e.sp = {e.sp}")]
         prologue_instr = comment + [
             Instr('DIP', [jump_length], {}),
