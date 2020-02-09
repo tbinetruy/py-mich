@@ -135,9 +135,9 @@ class VM:
         self._assert_min_stack_length(2)
 
         self._run_instructions(self.stack[self.sp - 1])
-        args = self.pop()
-        self.pop()  # drop body
-        self.push(args)
+        #args = self.pop()
+        #self.pop()  # drop body
+        #self.push(args)
 
     @debug
     def add(self):
@@ -245,6 +245,7 @@ class VM:
             self.sp = len(self.stack) - 1
         else:
             self.stack.insert(self.sp + jump, tmp)
+            self.sp += jump
 
 
 class TestVM(unittest.TestCase):

@@ -119,7 +119,7 @@ class Compiler:
     def free_var(self, var_name, e: Env):
         var_location = e.vars[var_name]
         jump = e.sp - var_location
-        e.sp -= 1
+        e.sp -= jump # DIP
 
         # If the stack pointer is at 0, then don't increment it
         # see VM.pop that has particular behavior when it results
@@ -181,35 +181,29 @@ class Compiler:
 
         func_addr = e.vars[f.func.id]
         jump_length = e.sp - func_addr
-        e.sp += 1  # Account for DUP
-        e.sp -= jump_length  # Account for DIP
-        e.sp -= 1  # Account for DIP
-        comment = [Comment(f"Copying function {f.func.id} at {func_addr}")]
+        #e.sp += 1  # Account for DUP
+        #e.sp -= 1  # Account for DIP
+        comment = [Comment(f"Copying function {f.func.id} at {func_addr}, e.sp = {e.sp}")]
         prologue_instr = comment + [
             Instr('DIP', [jump_length], {}),
-            Instr('DUP', [], {}),
-            Instr('DIP', [], {}),
         ]
+        e.sp -= jump_length  # Account for DIP
 
         # fetch arg name for function
         arg_name = e.args[f.func.id]
 
         # compile arg
-        arg = self.compile(f.args[0]) + [
-            Instr('IIP', [], {})
-        ]
-
-        # Account for pushing argument
-        e.sp += 1
+        arg = self.compile(f.args[0], e)
 
         # Store arg stack location
         e.vars[arg_name] = e.sp - 1
 
+        e.sp += jump_length  # Account for DIG
+
         comment = [Comment(f"Executing function {f.func.id} at {func_addr}")]
         return prologue_instr + arg + comment + [
             Instr('EXEC', [], {}),
-            Instr('DIG', [1], {}),
-            Instr('IIP', [], {})
+            Instr('DIG', [jump_length], {}),
         ]
 
     @debug
@@ -289,17 +283,17 @@ class TestCompilerDefun(unittest.TestCase):
         source = """
 baz = 1
 def foo(a):
-    return a + 3
+    b = 2
+    return a + b + 3
 bar = foo(baz)
-foo(bar)
-
-#foo(foo(baz))
+fff = foo(bar)
+foo(foo(bar))
 """
         c = Compiler(source, isDebug=False)
         instructions = c.compile(c.ast)
         vm._run_instructions(instructions)
-        self.assertEqual(vm.stack[-1], 7)
-        self.assertEqual(len(vm.stack), 4)
+        self.assertEqual(vm.stack[-1], 16)
+        self.assertEqual(len(vm.stack), 5)
 
 
 
