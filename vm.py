@@ -237,12 +237,14 @@ class VM:
         self.increment_sp()
 
     @debug
-    def dig(self):
+    def dig(self, jump = None):
         tmp = self.stack[self.sp]
         del(self.stack[self.sp])
-        self.stack += [tmp]
-        self.sp = len(self.stack) - 1
-
+        if 0: #not jump:
+            self.stack += [tmp]
+            self.sp = len(self.stack) - 1
+        else:
+            self.stack.insert(self.sp + jump, tmp)
 
 
 class TestVM(unittest.TestCase):
