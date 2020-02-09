@@ -37,12 +37,12 @@ def debug(in_func):
     def out_func(*args, **kwargs):
         self = args[0]
 
-        if self.isDebug:
-            print(in_func, args, kwargs)
+        #if self.isDebug:
+        #    print(in_func, args, kwargs)
 
         result = in_func(*args, **kwargs)
 
-        self._debug()
+        #self._debug()
         return result
     return out_func
 
@@ -82,20 +82,29 @@ class VM:
 
     def _run_instructions(self, instructions: List[Instr]) -> None:
         for instr in instructions:
+            if self.isDebug:
+                print("=== ", instr.name, instr.args, instr.kwargs, " ===")
+                self._debug()
             instr_function = self.instruction_mapping[instr.name]
             instr_function(*instr.args, **instr.kwargs)
+            if self.isDebug:
+                self._debug()
 
     def _reset_stack(self):
         self.stack = self.get_init_stack()
         self.sp = self.get_init_sp()
-        self._debug()
 
     def _debug(self):
+        def clean(el):
+            if type(el) == list:
+                return "[func]"
+            else:
+                return el
         if self.isDebug:
             stack = [
-                ("*", el)
+                ("*", clean(el))
                 if i == self.sp
-                else el
+                else clean(el)
                 for i, el in enumerate(self.stack)
             ]
             print("S:", stack, "sp:", self.sp)
@@ -185,7 +194,6 @@ class VM:
     def push(self, val):
         self.stack.insert(self.sp + 1, val)
         self.increment_sp()
-        self._debug()
 
     @debug
     def pop(self):
@@ -204,7 +212,6 @@ class VM:
         else:
             self.decrement_sp()
 
-        self._debug()
         return el
 
     @debug
