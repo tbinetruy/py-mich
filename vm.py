@@ -94,20 +94,23 @@ class VM:
         self.stack = self.get_init_stack()
         self.sp = self.get_init_sp()
 
-    def _debug(self):
+    def get_state_as_str(self):
         def clean(el):
             if type(el) == list:
                 return "[func]"
             else:
                 return el
+        stack = [
+            ("*", clean(el))
+            if i == self.sp
+            else clean(el)
+            for i, el in enumerate(self.stack)
+        ]
+        return "S: " + str(stack) + " ; sp: ", str(self.sp)
+
+    def _debug(self):
         if self.isDebug:
-            stack = [
-                ("*", clean(el))
-                if i == self.sp
-                else clean(el)
-                for i, el in enumerate(self.stack)
-            ]
-            print("S:", stack, "sp:", self.sp)
+            print(self.get_state_as_str())
 
     def _stack_top(self):
         return self.stack[-1]
