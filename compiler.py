@@ -44,7 +44,11 @@ class Compiler:
         value = assign.value
         instructions = self.compile(var_name, e) + self.compile(value, e)
         e.vars[var_name.id] = e.sp
-        return instructions
+        try:
+            print_val = value.value
+        except:
+            print_val = "[object]"
+        return [Comment(f"{var_name.id} = {print_val}")] + instructions
 
     @debug
     def compile_expr(self, expr: ast.Expr, e: Env) -> List[Instr]:
@@ -63,12 +67,15 @@ class Compiler:
         if type(name.ctx) == ast.Load:
             var_addr = e.vars[var_name.id]
             jump_length = e.sp - var_addr
-            e.sp += 1  # Account for DUP
-            return [
+            comment = [Comment(f"Loading {var_name.id} at {var_addr}, e.sp = {e.sp}, jump = {jump_length}")]
+            instructions = [
                 Instr('DIP', [jump_length], {}),
                 Instr('DUP', [], {}),
-                Instr('DIG', [], {}),
+                Instr('DIG', [jump_length], {}),
+                # Instr('IIP', [], {}),
             ]
+            e.sp += 1  # Account for DUP
+            return comment + instructions
         elif type(name.ctx) == ast.Store:
             e.vars[var_name.id] = 42
             return []
