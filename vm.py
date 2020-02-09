@@ -134,10 +134,10 @@ class VM:
     def run_lambda(self):
         self._assert_min_stack_length(2)
 
+        self._run_instructions(self.stack[self.sp - 1])
         args = self.pop()
-        body: Array = self.pop()
+        self.pop()  # drop body
         self.push(args)
-        self._run_instructions(body)
 
     @debug
     def add(self):
