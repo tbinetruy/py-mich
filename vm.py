@@ -75,6 +75,7 @@ class VM:
             "SWAP": self.swap,
             "EXEC": self.run_lambda,
             "CONS": self.append_before_list,
+            "COMMENT": lambda *args, **kwargs: 1,
         }
 
         self._reset_stack()

@@ -17,6 +17,9 @@ def debug(cb):
         return cb(*args, **kwargs)
     return f
 
+def Comment(msg):
+    return Instr("COMMENT", [msg], {})
+
 class Compiler:
     def __init__(self, src, isDebug=True):
         self.ast = ast.parse(src)
