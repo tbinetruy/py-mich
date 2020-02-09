@@ -116,6 +116,25 @@ class Compiler:
             instructions += self.append_before_list_el(el, e)
         return instructions
 
+    def free_var(self, var_name, e: Env):
+        var_location = e.vars[var_name]
+        jump = e.sp - var_location
+        e.sp -= 1
+
+        # If the stack pointer is at 0, then don't increment it
+        # see VM.pop that has particular behavior when it results
+        # in empty stack
+        if e.sp:
+            epilogue = [Instr("IIP", [jump], {})]
+        else:
+            epilogue = []
+
+        comment = [Comment(f"Freeing var {var_name} at {var_location}")]
+        return (comment + [
+            Instr("DIP", [jump], {}),
+            Instr("DROP", [], {}),
+        ] + epilogue, e)
+
     @debug
     def compile_defun(self, f: ast.FunctionDef, e: Env):
         e.sp += 1  # account for body push
