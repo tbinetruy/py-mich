@@ -51,7 +51,7 @@ class Compiler:
         return self.compile(expr.value, e)
 
     @debug
-    def compile_num(self, num: ast.Num, e: Env) -> List[Instr]:
+    def compile_num(self, num: ast.Constant, e: Env) -> List[Instr]:
         e.sp += 1  # Account for PUSH
         return [
             Instr('PUSH', [num.value], {}),
