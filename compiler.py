@@ -142,25 +142,62 @@ class Compiler:
         e.vars[f.name] = e.sp
         e.args[f.name] = f.args.args[0].arg
 
+        # get init env keys
+        init_var_names = set(e.vars.keys())
+
         func_env = e.copy()
         func_env.vars[f.args.args[0].arg] = e.sp
 
-        instrs = []
+        body_instructions = []
         for i in f.body:
-            instrs += self.compile(i, func_env)
+            body_instructions += self.compile(i, func_env)
 
-        return [
-            Instr("PUSH", [instrs], {}),
+        # get new func_env keys
+        new_var_names = set(func_env.vars.keys())
+
+        # intersect init and new env keys
+        intersection = list(new_var_names - init_var_names)
+
+        sorted_keys = sorted(intersection, key=lambda a: func_env.vars[a], reverse=True)
+
+        # remove env vars from memory
+        free_var_instructions = []
+        tmp_env = func_env
+        for var_name in sorted_keys:
+            i, tmp_env = self.free_var(var_name, tmp_env)
+            free_var_instructions += i
+            try:
+                del(e.vars[var_name])
+            except:
+                pass
+
+        comment = [Comment(f"Storing function {f.name} at {e.vars[f.name]}")]
+        return comment + [
+            Instr("PUSH", [body_instructions + free_var_instructions], {}),
         ]
 
     @debug
     def compile_fcall(self, f: ast.FunctionDef, e: Env):
 
+        func_addr = e.vars[f.func.id]
+        jump_length = e.sp - func_addr
+        e.sp += 1  # Account for DUP
+        e.sp -= jump_length  # Account for DIP
+        e.sp -= 1  # Account for DIP
+        comment = [Comment(f"Copying function {f.func.id} at {func_addr}")]
+        prologue_instr = comment + [
+            Instr('DIP', [jump_length], {}),
+            Instr('DUP', [], {}),
+            Instr('DIP', [], {}),
+        ]
+
         # fetch arg name for function
         arg_name = e.args[f.func.id]
 
         # compile arg
-        arg = self.compile(f.args[0])
+        arg = self.compile(f.args[0]) + [
+            Instr('IIP', [], {})
+        ]
 
         # Account for pushing argument
         e.sp += 1
@@ -168,16 +205,12 @@ class Compiler:
         # Store arg stack location
         e.vars[arg_name] = e.sp - 1
 
-            #var_addr = e.vars[var_name.id]
-            #jump_length = e.sp - var_addr
-            #e.sp += 1  # Account for DUP
-            #return [
-            #    Instr('DIP', [jump_length], {}),
-            #    Instr('DUP', [], {}),
-            #    Instr('DIG', [], {}),
-            #]
-
-        return arg + [Instr('EXEC', [], {})]
+        comment = [Comment(f"Executing function {f.func.id} at {func_addr}")]
+        return prologue_instr + arg + comment + [
+            Instr('EXEC', [], {}),
+            Instr('DIG', [1], {}),
+            Instr('IIP', [], {})
+        ]
 
     @debug
     def compile_return(self, r: ast.FunctionDef, e: Env):
@@ -252,19 +285,21 @@ class TestCompilerList(unittest.TestCase):
 
 class TestCompilerDefun(unittest.TestCase):
     def test_func_def(self):
-        vm = VM(isDebug=False)
+        vm = VM(isDebug=True)
         source = """
+baz = 1
 def foo(a):
-    b = 1
-    c = 2
-    return a + b + c
-foo(3)
-        """
+    return a + 3
+bar = foo(baz)
+foo(bar)
+
+#foo(foo(baz))
+"""
         c = Compiler(source, isDebug=False)
         instructions = c.compile(c.ast)
         vm._run_instructions(instructions)
-        self.assertEqual(vm.stack, [3, 1, 2, 6])
-        self.assertEqual(vm.sp, 3)
+        self.assertEqual(vm.stack[-1], 7)
+        self.assertEqual(len(vm.stack), 4)
 
 
 
