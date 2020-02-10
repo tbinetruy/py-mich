@@ -137,10 +137,9 @@ class VM:
     def run_lambda(self):
         self._assert_min_stack_length(2)
 
+        print("@@@@@@@ Start executing function @@@@@@@")
         self._run_instructions(self.stack[self.sp - 1])
-        #args = self.pop()
-        #self.pop()  # drop body
-        #self.push(args)
+        print("@@@@@@@ End executing function @@@@@@@")
 
     @debug
     def add(self):
