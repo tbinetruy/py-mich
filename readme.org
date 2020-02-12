@@ -17,7 +17,7 @@ Here is an example of how to declare and call functions and variables:
 from vm import VM
 from compiler import Compiler
 
-vm = VM(isDebug=True) 
+vm = VM(isDebug=True)
 source = "baz = 1 \ndef foo(a): \n    b = 2 \n    return a + b + 3 \nbar = foo(baz) \nfff = foo(bar) \nfoo(foo(bar))"""
 c = Compiler(source, isDebug=False)
 instructions = c.compile(c.ast)
@@ -56,7 +56,7 @@ foo(foo(bar))
 ===  COMMENT ['Storing function foo at 1'] {}  ===
 ("S: [('*', 1)] ; sp: ", '0')
 ("S: [('*', 1)] ; sp: ", '0')
-===  PUSH [[Instr(name='COMMENT', args=['b = 2'], kwargs={}), Instr(name='PUSH', args=[2], kwargs={}), Instr(name='COMMENT', args=['Loading a at 1, e.sp = 2, jump = 1'], kwargs={}), Instr(name='DIP', args=[1], kwargs={}), Instr(name='DUP', args=[], kwargs={}), Instr(name='DIG', args=[1], kwargs={}), Instr(name='COMMENT', args=['Loading b at 2, e.sp = 3, jump = 1'], kwargs={}), Instr(name='DIP', args=[1], kwargs={}), Instr(name='DUP', args=[], kwargs={}), Instr(name='DIG', args=[1], kwargs={}), Instr(name='ADD', args=[], kwargs={}), Instr(name='PUSH', args=[3], kwargs={}), Instr(name='ADD', args=[], kwargs={}), Instr(name='COMMENT', args=['Freeing var b at 2'], kwargs={}), Instr(name='DIP', args=[1], kwargs={}), Instr(name='DROP', args=[], kwargs={}), Instr(name='IIP', args=[1], kwargs={}), Instr(name='COMMENT', args=['Freeing var a at 1'], kwargs={}), Instr(name='DIP', args=[1], kwargs={}), Instr(name='DROP', args=[], kwargs={}), Instr(name='IIP', args=[1], kwargs={})]] {}  ===
+===  PUSH [[Instr(name='COMMENT', args=['b = 2'], kwargs={}), Instr(name='PUSH', args=[2], kwargs={}), Instr(name='COMMENT', args=['Loading a at 2, e.sp = 3, jump = 1'], kwargs={}), Instr(name='DIP', args=[1], kwargs={}), Instr(name='DUP', args=[], kwargs={}), Instr(name='DIG', args=[1], kwargs={}), Instr(name='COMMENT', args=['Loading b at 3, e.sp = 4, jump = 1'], kwargs={}), Instr(name='DIP', args=[1], kwargs={}), Instr(name='DUP', args=[], kwargs={}), Instr(name='DIG', args=[1], kwargs={}), Instr(name='ADD', args=[], kwargs={}), Instr(name='PUSH', args=[3], kwargs={}), Instr(name='ADD', args=[], kwargs={}), Instr(name='COMMENT', args=['Freeing var b at 3'], kwargs={}), Instr(name='DIP', args=[1], kwargs={}), Instr(name='DROP', args=[], kwargs={}), Instr(name='IIP', args=[1], kwargs={}), Instr(name='COMMENT', args=['Freeing var a at 2'], kwargs={}), Instr(name='DIP', args=[1], kwargs={}), Instr(name='DROP', args=[], kwargs={}), Instr(name='IIP', args=[1], kwargs={})]] {}  ===
 ("S: [('*', 1)] ; sp: ", '0')
 ("S: [1, ('*', '[func]')] ; sp: ", '1')
 ===  COMMENT ['bar = [object]'] {}  ===
@@ -85,13 +85,14 @@ foo(foo(bar))
 ("S: [1, '[func]', ('*', 1)] ; sp: ", '2')
 ===  EXEC [] {}  ===
 ("S: [1, '[func]', ('*', 1)] ; sp: ", '2')
+@@@@@@@ Start executing function @@@@@@@
 ===  COMMENT ['b = 2'] {}  ===
 ("S: [1, '[func]', ('*', 1)] ; sp: ", '2')
 ("S: [1, '[func]', ('*', 1)] ; sp: ", '2')
 ===  PUSH [2] {}  ===
 ("S: [1, '[func]', ('*', 1)] ; sp: ", '2')
 ("S: [1, '[func]', 1, ('*', 2)] ; sp: ", '3')
-===  COMMENT ['Loading a at 1, e.sp = 2, jump = 1'] {}  ===
+===  COMMENT ['Loading a at 2, e.sp = 3, jump = 1'] {}  ===
 ("S: [1, '[func]', 1, ('*', 2)] ; sp: ", '3')
 ("S: [1, '[func]', 1, ('*', 2)] ; sp: ", '3')
 ===  DIP [1] {}  ===
@@ -103,7 +104,7 @@ foo(foo(bar))
 ===  DIG [1] {}  ===
 ("S: [1, '[func]', 1, ('*', 1), 2] ; sp: ", '3')
 ("S: [1, '[func]', 1, 2, ('*', 1)] ; sp: ", '4')
-===  COMMENT ['Loading b at 2, e.sp = 3, jump = 1'] {}  ===
+===  COMMENT ['Loading b at 3, e.sp = 4, jump = 1'] {}  ===
 ("S: [1, '[func]', 1, 2, ('*', 1)] ; sp: ", '4')
 ("S: [1, '[func]', 1, 2, ('*', 1)] ; sp: ", '4')
 ===  DIP [1] {}  ===
@@ -124,7 +125,7 @@ foo(foo(bar))
 ===  ADD [] {}  ===
 ("S: [1, '[func]', 1, 2, 3, ('*', 3)] ; sp: ", '5')
 ("S: [1, '[func]', 1, 2, ('*', 6)] ; sp: ", '4')
-===  COMMENT ['Freeing var b at 2'] {}  ===
+===  COMMENT ['Freeing var b at 3'] {}  ===
 ("S: [1, '[func]', 1, 2, ('*', 6)] ; sp: ", '4')
 ("S: [1, '[func]', 1, 2, ('*', 6)] ; sp: ", '4')
 ===  DIP [1] {}  ===
@@ -136,7 +137,7 @@ foo(foo(bar))
 ===  IIP [1] {}  ===
 ("S: [1, '[func]', ('*', 1), 6] ; sp: ", '2')
 ("S: [1, '[func]', 1, ('*', 6)] ; sp: ", '3')
-===  COMMENT ['Freeing var a at 1'] {}  ===
+===  COMMENT ['Freeing var a at 2'] {}  ===
 ("S: [1, '[func]', 1, ('*', 6)] ; sp: ", '3')
 ("S: [1, '[func]', 1, ('*', 6)] ; sp: ", '3')
 ===  DIP [1] {}  ===
@@ -148,6 +149,7 @@ foo(foo(bar))
 ===  IIP [1] {}  ===
 ("S: [1, ('*', '[func]'), 6] ; sp: ", '1')
 ("S: [1, '[func]', ('*', 6)] ; sp: ", '2')
+@@@@@@@ End executing function @@@@@@@
 ("S: [1, '[func]', ('*', 6)] ; sp: ", '2')
 ===  DIG [0] {}  ===
 ("S: [1, '[func]', ('*', 6)] ; sp: ", '2')
@@ -178,13 +180,14 @@ foo(foo(bar))
 ("S: [1, '[func]', ('*', 6), 6] ; sp: ", '2')
 ===  EXEC [] {}  ===
 ("S: [1, '[func]', ('*', 6), 6] ; sp: ", '2')
+@@@@@@@ Start executing function @@@@@@@
 ===  COMMENT ['b = 2'] {}  ===
 ("S: [1, '[func]', ('*', 6), 6] ; sp: ", '2')
 ("S: [1, '[func]', ('*', 6), 6] ; sp: ", '2')
 ===  PUSH [2] {}  ===
 ("S: [1, '[func]', ('*', 6), 6] ; sp: ", '2')
 ("S: [1, '[func]', 6, ('*', 2), 6] ; sp: ", '3')
-===  COMMENT ['Loading a at 1, e.sp = 2, jump = 1'] {}  ===
+===  COMMENT ['Loading a at 2, e.sp = 3, jump = 1'] {}  ===
 ("S: [1, '[func]', 6, ('*', 2), 6] ; sp: ", '3')
 ("S: [1, '[func]', 6, ('*', 2), 6] ; sp: ", '3')
 ===  DIP [1] {}  ===
@@ -196,7 +199,7 @@ foo(foo(bar))
 ===  DIG [1] {}  ===
 ("S: [1, '[func]', 6, ('*', 6), 2, 6] ; sp: ", '3')
 ("S: [1, '[func]', 6, 2, ('*', 6), 6] ; sp: ", '4')
-===  COMMENT ['Loading b at 2, e.sp = 3, jump = 1'] {}  ===
+===  COMMENT ['Loading b at 3, e.sp = 4, jump = 1'] {}  ===
 ("S: [1, '[func]', 6, 2, ('*', 6), 6] ; sp: ", '4')
 ("S: [1, '[func]', 6, 2, ('*', 6), 6] ; sp: ", '4')
 ===  DIP [1] {}  ===
@@ -217,7 +220,7 @@ foo(foo(bar))
 ===  ADD [] {}  ===
 ("S: [1, '[func]', 6, 2, 8, ('*', 3), 6] ; sp: ", '5')
 ("S: [1, '[func]', 6, 2, ('*', 11), 6] ; sp: ", '4')
-===  COMMENT ['Freeing var b at 2'] {}  ===
+===  COMMENT ['Freeing var b at 3'] {}  ===
 ("S: [1, '[func]', 6, 2, ('*', 11), 6] ; sp: ", '4')
 ("S: [1, '[func]', 6, 2, ('*', 11), 6] ; sp: ", '4')
 ===  DIP [1] {}  ===
@@ -229,7 +232,7 @@ foo(foo(bar))
 ===  IIP [1] {}  ===
 ("S: [1, '[func]', ('*', 6), 11, 6] ; sp: ", '2')
 ("S: [1, '[func]', 6, ('*', 11), 6] ; sp: ", '3')
-===  COMMENT ['Freeing var a at 1'] {}  ===
+===  COMMENT ['Freeing var a at 2'] {}  ===
 ("S: [1, '[func]', 6, ('*', 11), 6] ; sp: ", '3')
 ("S: [1, '[func]', 6, ('*', 11), 6] ; sp: ", '3')
 ===  DIP [1] {}  ===
@@ -241,6 +244,7 @@ foo(foo(bar))
 ===  IIP [1] {}  ===
 ("S: [1, ('*', '[func]'), 11, 6] ; sp: ", '1')
 ("S: [1, '[func]', ('*', 11), 6] ; sp: ", '2')
+@@@@@@@ End executing function @@@@@@@
 ("S: [1, '[func]', ('*', 11), 6] ; sp: ", '2')
 ===  DIG [1] {}  ===
 ("S: [1, '[func]', ('*', 11), 6] ; sp: ", '2')
@@ -274,13 +278,14 @@ foo(foo(bar))
 ("S: [1, '[func]', ('*', 6), 6, 11] ; sp: ", '2')
 ===  EXEC [] {}  ===
 ("S: [1, '[func]', ('*', 6), 6, 11] ; sp: ", '2')
+@@@@@@@ Start executing function @@@@@@@
 ===  COMMENT ['b = 2'] {}  ===
 ("S: [1, '[func]', ('*', 6), 6, 11] ; sp: ", '2')
 ("S: [1, '[func]', ('*', 6), 6, 11] ; sp: ", '2')
 ===  PUSH [2] {}  ===
 ("S: [1, '[func]', ('*', 6), 6, 11] ; sp: ", '2')
 ("S: [1, '[func]', 6, ('*', 2), 6, 11] ; sp: ", '3')
-===  COMMENT ['Loading a at 1, e.sp = 2, jump = 1'] {}  ===
+===  COMMENT ['Loading a at 2, e.sp = 3, jump = 1'] {}  ===
 ("S: [1, '[func]', 6, ('*', 2), 6, 11] ; sp: ", '3')
 ("S: [1, '[func]', 6, ('*', 2), 6, 11] ; sp: ", '3')
 ===  DIP [1] {}  ===
@@ -292,7 +297,7 @@ foo(foo(bar))
 ===  DIG [1] {}  ===
 ("S: [1, '[func]', 6, ('*', 6), 2, 6, 11] ; sp: ", '3')
 ("S: [1, '[func]', 6, 2, ('*', 6), 6, 11] ; sp: ", '4')
-===  COMMENT ['Loading b at 2, e.sp = 3, jump = 1'] {}  ===
+===  COMMENT ['Loading b at 3, e.sp = 4, jump = 1'] {}  ===
 ("S: [1, '[func]', 6, 2, ('*', 6), 6, 11] ; sp: ", '4')
 ("S: [1, '[func]', 6, 2, ('*', 6), 6, 11] ; sp: ", '4')
 ===  DIP [1] {}  ===
@@ -313,7 +318,7 @@ foo(foo(bar))
 ===  ADD [] {}  ===
 ("S: [1, '[func]', 6, 2, 8, ('*', 3), 6, 11] ; sp: ", '5')
 ("S: [1, '[func]', 6, 2, ('*', 11), 6, 11] ; sp: ", '4')
-===  COMMENT ['Freeing var b at 2'] {}  ===
+===  COMMENT ['Freeing var b at 3'] {}  ===
 ("S: [1, '[func]', 6, 2, ('*', 11), 6, 11] ; sp: ", '4')
 ("S: [1, '[func]', 6, 2, ('*', 11), 6, 11] ; sp: ", '4')
 ===  DIP [1] {}  ===
@@ -325,7 +330,7 @@ foo(foo(bar))
 ===  IIP [1] {}  ===
 ("S: [1, '[func]', ('*', 6), 11, 6, 11] ; sp: ", '2')
 ("S: [1, '[func]', 6, ('*', 11), 6, 11] ; sp: ", '3')
-===  COMMENT ['Freeing var a at 1'] {}  ===
+===  COMMENT ['Freeing var a at 2'] {}  ===
 ("S: [1, '[func]', 6, ('*', 11), 6, 11] ; sp: ", '3')
 ("S: [1, '[func]', 6, ('*', 11), 6, 11] ; sp: ", '3')
 ===  DIP [1] {}  ===
@@ -337,6 +342,7 @@ foo(foo(bar))
 ===  IIP [1] {}  ===
 ("S: [1, ('*', '[func]'), 11, 6, 11] ; sp: ", '1')
 ("S: [1, '[func]', ('*', 11), 6, 11] ; sp: ", '2')
+@@@@@@@ End executing function @@@@@@@
 ("S: [1, '[func]', ('*', 11), 6, 11] ; sp: ", '2')
 ===  DIG [0] {}  ===
 ("S: [1, '[func]', ('*', 11), 6, 11] ; sp: ", '2')
@@ -346,13 +352,14 @@ foo(foo(bar))
 ("S: [1, '[func]', ('*', 11), 6, 11] ; sp: ", '2')
 ===  EXEC [] {}  ===
 ("S: [1, '[func]', ('*', 11), 6, 11] ; sp: ", '2')
+@@@@@@@ Start executing function @@@@@@@
 ===  COMMENT ['b = 2'] {}  ===
 ("S: [1, '[func]', ('*', 11), 6, 11] ; sp: ", '2')
 ("S: [1, '[func]', ('*', 11), 6, 11] ; sp: ", '2')
 ===  PUSH [2] {}  ===
 ("S: [1, '[func]', ('*', 11), 6, 11] ; sp: ", '2')
 ("S: [1, '[func]', 11, ('*', 2), 6, 11] ; sp: ", '3')
-===  COMMENT ['Loading a at 1, e.sp = 2, jump = 1'] {}  ===
+===  COMMENT ['Loading a at 2, e.sp = 3, jump = 1'] {}  ===
 ("S: [1, '[func]', 11, ('*', 2), 6, 11] ; sp: ", '3')
 ("S: [1, '[func]', 11, ('*', 2), 6, 11] ; sp: ", '3')
 ===  DIP [1] {}  ===
@@ -364,7 +371,7 @@ foo(foo(bar))
 ===  DIG [1] {}  ===
 ("S: [1, '[func]', 11, ('*', 11), 2, 6, 11] ; sp: ", '3')
 ("S: [1, '[func]', 11, 2, ('*', 11), 6, 11] ; sp: ", '4')
-===  COMMENT ['Loading b at 2, e.sp = 3, jump = 1'] {}  ===
+===  COMMENT ['Loading b at 3, e.sp = 4, jump = 1'] {}  ===
 ("S: [1, '[func]', 11, 2, ('*', 11), 6, 11] ; sp: ", '4')
 ("S: [1, '[func]', 11, 2, ('*', 11), 6, 11] ; sp: ", '4')
 ===  DIP [1] {}  ===
@@ -385,7 +392,7 @@ foo(foo(bar))
 ===  ADD [] {}  ===
 ("S: [1, '[func]', 11, 2, 13, ('*', 3), 6, 11] ; sp: ", '5')
 ("S: [1, '[func]', 11, 2, ('*', 16), 6, 11] ; sp: ", '4')
-===  COMMENT ['Freeing var b at 2'] {}  ===
+===  COMMENT ['Freeing var b at 3'] {}  ===
 ("S: [1, '[func]', 11, 2, ('*', 16), 6, 11] ; sp: ", '4')
 ("S: [1, '[func]', 11, 2, ('*', 16), 6, 11] ; sp: ", '4')
 ===  DIP [1] {}  ===
@@ -397,7 +404,7 @@ foo(foo(bar))
 ===  IIP [1] {}  ===
 ("S: [1, '[func]', ('*', 11), 16, 6, 11] ; sp: ", '2')
 ("S: [1, '[func]', 11, ('*', 16), 6, 11] ; sp: ", '3')
-===  COMMENT ['Freeing var a at 1'] {}  ===
+===  COMMENT ['Freeing var a at 2'] {}  ===
 ("S: [1, '[func]', 11, ('*', 16), 6, 11] ; sp: ", '3')
 ("S: [1, '[func]', 11, ('*', 16), 6, 11] ; sp: ", '3')
 ===  DIP [1] {}  ===
@@ -409,6 +416,7 @@ foo(foo(bar))
 ===  IIP [1] {}  ===
 ("S: [1, ('*', '[func]'), 16, 6, 11] ; sp: ", '1')
 ("S: [1, '[func]', ('*', 16), 6, 11] ; sp: ", '2')
+@@@@@@@ End executing function @@@@@@@
 ("S: [1, '[func]', ('*', 16), 6, 11] ; sp: ", '2')
 ===  DIG [2] {}  ===
 ("S: [1, '[func]', ('*', 16), 6, 11] ; sp: ", '2')
