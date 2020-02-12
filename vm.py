@@ -137,9 +137,11 @@ class VM:
     def run_lambda(self):
         self._assert_min_stack_length(2)
 
-        print("@@@@@@@ Start executing function @@@@@@@")
+        if self.isDebug:
+            print("@@@@@@@ Start executing function @@@@@@@")
         self._run_instructions(self.stack[self.sp - 1])
-        print("@@@@@@@ End executing function @@@@@@@")
+        if self.isDebug:
+            print("@@@@@@@ End executing function @@@@@@@")
 
     @debug
     def add(self):
