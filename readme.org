@@ -11,7 +11,7 @@ We'd like to compile Python code to Tezos' Micelson bytecode using Python's  ~as
 
 So far, only number variables and additions have been implemented in the compiler :D I'll update the readme as things evolve.
 
-Here is an example of how to declare and call functions and variables:
+Here is an example of how to declare and call functions and variables. For a more complex example, with nest functions and closures, have a look at ~main.py~
 
 #+begin_src python :exports both :results output
 from vm import VM

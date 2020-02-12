@@ -19,7 +19,7 @@ def foo2(arg):
 bar = foo(baz)
 fff = foo2(foo(bar))
 """
-c = Compiler(source, isDebug=True)
+c = Compiler(source, isDebug=False)
 instructions = c.compile(c.ast)
 vm = VM(isDebug=True)
 vm._run_instructions(instructions)
