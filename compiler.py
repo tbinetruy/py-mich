@@ -146,8 +146,12 @@ class Compiler:
         init_var_names = set(e.vars.keys())
 
         func_env = e.copy()
-        func_env.vars[f.args.args[0].arg] = e.sp
 
+        # store argument in env
+        func_env.sp += 1
+        func_env.vars[f.args.args[0].arg] = func_env.sp
+
+        # iterate body instructions
         body_instructions = []
         for i in f.body:
             body_instructions += self.compile(i, func_env)
@@ -158,14 +162,16 @@ class Compiler:
         # intersect init and new env keys
         intersection = list(new_var_names - init_var_names)
 
+        # Free from the top of the stack. this ensures that the variable pointers
+        # are not changed as variables are freed from the stack
         sorted_keys = sorted(intersection, key=lambda a: func_env.vars[a], reverse=True)
 
         # remove env vars from memory
         free_var_instructions = []
         tmp_env = func_env
         for var_name in sorted_keys:
-            i, tmp_env = self.free_var(var_name, tmp_env)
-            free_var_instructions += i
+            instr, tmp_env = self.free_var(var_name, tmp_env)
+            free_var_instructions += instr
             try:
                 del(e.vars[var_name])
             except:
@@ -178,25 +184,32 @@ class Compiler:
 
     @debug
     def compile_fcall(self, f: ast.FunctionDef, e: Env):
+        # We work on an env copy to prevent from polluting the environment
+        # with vars that we'd need to remove. We have to remember to pass
+        # back the new stack pointer however
+        tmp_env = e.copy()
 
-        func_addr = e.vars[f.func.id]
-        jump_length = e.sp - func_addr
+        func_addr = tmp_env.vars[f.func.id]
+        jump_length = tmp_env.sp - func_addr
         comment = [Comment(f"Moving to function {f.func.id} at {func_addr}, e.sp = {e.sp}")]
         prologue_instr = comment + [
             Instr('DIP', [jump_length], {}),
         ]
-        e.sp -= jump_length  # Account for DIP
+        tmp_env.sp -= jump_length  # Account for DIP
 
         # fetch arg name for function
-        arg_name = e.args[f.func.id]
+        arg_name = tmp_env.args[f.func.id]
 
         # compile arg
-        arg = self.compile(f.args[0], e)
+        arg = self.compile(f.args[0], tmp_env)
 
         # Store arg stack location
-        e.vars[arg_name] = e.sp - 1
+        tmp_env.vars[arg_name] = tmp_env.sp
 
-        e.sp += jump_length  # Account for DIG
+        tmp_env.sp += jump_length  # Account for DIG
+
+        # We pass back the new stack pointer
+        e.sp = tmp_env.sp
 
         comment = [Comment(f"Executing function {f.func.id} at {func_addr}")]
         return prologue_instr + arg + comment + [
