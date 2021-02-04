@@ -1,7 +1,7 @@
 import ast
 import pprint
 import unittest
-from typing import List
+from typing import List, Optional
 
 from helpers import ast_to_tree
 from vm import VM
@@ -15,13 +15,16 @@ def debug(cb):
             print(cb.__name__)
 
         return cb(*args, **kwargs)
+
     return f
 
-def Comment(msg):
+
+def Comment(msg: str):
     return Instr("COMMENT", [msg], {})
 
+
 class Compiler:
-    def __init__(self, src, isDebug=True):
+    def __init__(self, src: str, isDebug=True):
         self.ast = ast.parse(src)
         self.isDebug = isDebug
 
@@ -31,7 +34,7 @@ class Compiler:
     def compile_module(self, m: ast.Module, e: Env) -> List[Instr]:
         instructions: List[Instr] = []
         for key, value in ast.iter_fields(m):
-            if key == 'body':
+            if key == "body":
                 for childNode in value:
                     instructions += self.compile(childNode, e)
 
@@ -58,7 +61,7 @@ class Compiler:
     def compile_num(self, num: ast.Constant, e: Env) -> List[Instr]:
         e.sp += 1  # Account for PUSH
         return [
-            Instr('PUSH', [num.value], {}),
+            Instr("PUSH", [num.value], {}),
         ]
 
     @debug
@@ -67,11 +70,15 @@ class Compiler:
         if type(name.ctx) == ast.Load:
             var_addr = e.vars[var_name.id]
             jump_length = e.sp - var_addr
-            comment = [Comment(f"Loading {var_name.id} at {var_addr}, e.sp = {e.sp}, jump = {jump_length}")]
+            comment = [
+                Comment(
+                    f"Loading {var_name.id} at {var_addr}, e.sp = {e.sp}, jump = {jump_length}"
+                )
+            ]
             instructions = [
-                Instr('DIP', [jump_length], {}),
-                Instr('DUP', [], {}),
-                Instr('DIG', [jump_length], {}),
+                Instr("DIP", [jump_length], {}),
+                Instr("DUP", [], {}),
+                Instr("DIG", [jump_length], {}),
                 # Instr('IIP', [], {}),
             ]
             e.sp += 1  # Account for DUP
@@ -93,20 +100,20 @@ class Compiler:
     def compile_add(self, t: ast.Add, e: Env) -> List[Instr]:
         e.sp -= 1  # Account for ADD
         return [
-            Instr('ADD', [], {}),
+            Instr("ADD", [], {}),
         ]
 
     @debug
     def create_list(self, e: Env) -> List[Instr]:
         e.sp += 1  # Account for pushing list
         return [
-            Instr('LIST', [], {}),
+            Instr("LIST", [], {}),
         ]
 
     @debug
     def append_before_list_el(self, el, e) -> List[Instr]:
         # no sp chage b/c they cancel out btwn the two instructions
-        return self.compile(el, e) + [Instr('CONS', [], {})]
+        return self.compile(el, e) + [Instr("CONS", [], {})]
 
     @debug
     def compile_list(self, l: ast.List, e: Env) -> List[Instr]:
@@ -119,7 +126,7 @@ class Compiler:
     def free_var(self, var_name, e: Env):
         var_location = e.vars[var_name]
         jump = e.sp - var_location
-        e.sp -= jump # DIP
+        e.sp -= jump  # DIP
 
         # If the stack pointer is at 0, then don't increment it
         # see VM.pop that has particular behavior when it results
@@ -130,10 +137,15 @@ class Compiler:
             epilogue = []
 
         comment = [Comment(f"Freeing var {var_name} at {var_location}")]
-        return (comment + [
-            Instr("DIP", [jump], {}),
-            Instr("DROP", [], {}),
-        ] + epilogue, e)
+        return (
+            comment
+            + [
+                Instr("DIP", [jump], {}),
+                Instr("DROP", [], {}),
+            ]
+            + epilogue,
+            e,
+        )
 
     @debug
     def compile_defun(self, f: ast.FunctionDef, e: Env):
@@ -173,7 +185,7 @@ class Compiler:
             instr, tmp_env = self.free_var(var_name, tmp_env)
             free_var_instructions += instr
             try:
-                del(e.vars[var_name])
+                del e.vars[var_name]
             except:
                 pass
 
@@ -191,9 +203,11 @@ class Compiler:
 
         func_addr = tmp_env.vars[f.func.id]
         jump_length = tmp_env.sp - func_addr
-        comment = [Comment(f"Moving to function {f.func.id} at {func_addr}, e.sp = {e.sp}")]
+        comment = [
+            Comment(f"Moving to function {f.func.id} at {func_addr}, e.sp = {e.sp}")
+        ]
         prologue_instr = comment + [
-            Instr('DIP', [jump_length], {}),
+            Instr("DIP", [jump_length], {}),
         ]
         tmp_env.sp -= jump_length  # Account for DIP
 
@@ -212,10 +226,15 @@ class Compiler:
         e.sp = tmp_env.sp
 
         comment = [Comment(f"Executing function {f.func.id} at {func_addr}")]
-        return prologue_instr + arg + comment + [
-            Instr('EXEC', [], {}),
-            Instr('DIG', [jump_length], {}),
-        ]
+        return (
+            prologue_instr
+            + arg
+            + comment
+            + [
+                Instr("EXEC", [], {}),
+                Instr("DIG", [jump_length], {}),
+            ]
+        )
 
     @debug
     def compile_return(self, r: ast.FunctionDef, e: Env):
@@ -253,9 +272,10 @@ class Compiler:
         elif type(node_ast) == ast.Call:
             instructions += self.compile_fcall(node_ast, e)
         else:
-            import ipdb; ipdb.set_trace()
-            return NotImplementedError
+            import ipdb
 
+            ipdb.set_trace()
+            return NotImplementedError
 
         if self.isDebug:
             print(e)
@@ -280,6 +300,7 @@ class TestCompilerUnit(unittest.TestCase):
     def test_print_ast(self):
         pass
 
+
 class TestCompilerList(unittest.TestCase):
     def test_func_def(self):
         vm = VM(isDebug=False)
@@ -287,17 +308,32 @@ class TestCompilerList(unittest.TestCase):
 [1, 2, 3]
         """
         c = Compiler(source, isDebug=False)
-        c.print_ast()
+        # c.print_ast()
         instructions = c.compile(c.ast)
         vm._run_instructions(instructions)
         self.assertEqual(vm.stack, [Array([1, 2, 3])])
         self.assertEqual(vm.sp, 0)
 
+
+class TestCompilerAssign(unittest.TestCase):
+    def test_reassign(self):
+        vm = VM(isDebug=False)
+        source = """
+a = 1
+b = 2
+a = b
+        """
+        c = Compiler(source, isDebug=False)
+        instructions = c.compile(c.ast)
+        vm._run_instructions(instructions)
+        self.assertEqual(vm.stack, [1, 2, 2])
+        self.assertEqual(vm.sp, 2)
+
+
 class TestCompilerDefun(unittest.TestCase):
     def test_func_def(self):
-        vm = VM(isDebug=True)
-        source = """
-baz = 1
+        vm = VM(isDebug=False)
+        source = """baz = 1
 def foo(a):
     b = 2
     return a + b + 3
@@ -310,7 +346,6 @@ foo(foo(bar))
         vm._run_instructions(instructions)
         self.assertEqual(vm.stack[-1], 16)
         self.assertEqual(len(vm.stack), 5)
-
 
 
 class TestCompilerIntegration(unittest.TestCase):

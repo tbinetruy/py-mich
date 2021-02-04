@@ -1,6 +1,3 @@
-import ast
-import pprint
-
 from compiler import Compiler
 from vm import VM
 
