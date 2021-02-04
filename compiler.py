@@ -245,6 +245,7 @@ class Compiler:
 
     def compile(self, node_ast, e: Optional[Env] = None) -> List[Instr]:
         e = self.get_init_env() if not e else e
+        self.env = e  # saving as attribute for debug purposes
         instructions: List[Instr] = []
 
         if type(node_ast) == ast.Module:
@@ -308,7 +309,6 @@ class TestCompilerList(unittest.TestCase):
 [1, 2, 3]
         """
         c = Compiler(source, isDebug=False)
-        # c.print_ast()
         instructions = c.compile(c.ast)
         vm._run_instructions(instructions)
         self.assertEqual(vm.stack, [Array([1, 2, 3])])
@@ -326,8 +326,13 @@ a = b
         c = Compiler(source, isDebug=False)
         instructions = c.compile(c.ast)
         vm._run_instructions(instructions)
+        # TODO: make vm.stack == [1, 2]
+        #       and c.env.vars['a'] == 0 even
+        #       after reassign
         self.assertEqual(vm.stack, [1, 2, 2])
         self.assertEqual(vm.sp, 2)
+        self.assertEqual(c.env.vars['a'], 2)
+        self.assertEqual(c.env.vars['b'], 1)
 
 
 class TestCompilerDefun(unittest.TestCase):
