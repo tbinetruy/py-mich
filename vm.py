@@ -244,7 +244,7 @@ class VM:
     def dig(self, jump = None):
         tmp = self.stack[self.sp]
         del(self.stack[self.sp])
-        if 0: #not jump:
+        if jump is None:
             self.stack += [tmp]
             self.sp = len(self.stack) - 1
         else:
@@ -264,7 +264,7 @@ class TestVM(unittest.TestCase):
         vm.push(body)
         vm.push(arg)
         vm._run_instructions([Instr('EXEC', [], {})])
-        assert [arg, arg + 2] == vm.stack
+        assert [body, arg, arg + 2] == vm.stack
 
     def test_run_instructions(self):
         vm = VM()
