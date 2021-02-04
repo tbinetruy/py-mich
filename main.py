@@ -18,7 +18,7 @@ fff = foo2(foo(bar))
 """
 c = Compiler(source, isDebug=False)
 instructions = c.compile(c.ast)
-vm = VM(isDebug=True)
+vm = VM(isDebug=False)
 vm._run_instructions(instructions)
 
 exec(source)
