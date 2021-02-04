@@ -221,8 +221,13 @@ class Compiler:
     def compile_return(self, r: ast.FunctionDef, e: Env):
         return self.compile(r.value, e)
 
-    def compile(self, node_ast,  e: Env = Env({}, -1, {})) -> List[Instr]:
+    def get_init_env(self):
+        return Env({}, -1, {})
+
+    def compile(self, node_ast, e: Optional[Env] = None) -> List[Instr]:
+        e = self.get_init_env() if not e else e
         instructions: List[Instr] = []
+
         if type(node_ast) == ast.Module:
             instructions += self.compile_module(node_ast, e)
             if self.isDebug:
@@ -325,6 +330,4 @@ a + b + c
 
 
 if __name__ == "__main__":
-    for TestSuite in [TestCompilerUnit, TestCompilerIntegration]:
-        suite = unittest.defaultTestLoader.loadTestsFromTestCase(TestSuite)
-        unittest.TextTestRunner().run(suite)
+    unittest.main()
