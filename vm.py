@@ -74,11 +74,15 @@ class VM:
             "PUSH": self.push,
             "SWAP": self.swap,
             "EXEC": self.run_lambda,
+            "LAMBDA": self.store_lambda,
             "CONS": self.append_before_list,
             "COMMENT": lambda *args, **kwargs: 1,
         }
 
         self._reset_stack()
+
+    def store_lambda(self, args_types, return_type, body) -> None:
+        self.push(body)
 
     def _run_instructions(self, instructions: List[Instr]) -> None:
         for instr in instructions:
@@ -253,6 +257,25 @@ class VM:
 
 
 class TestVM(unittest.TestCase):
+    def test_store_lambda(self):
+        vm = VM()
+        body = [
+            Instr("DUP", [], {}),
+            Instr("PUSH", [2], {}),
+            Instr("ADD", [], {}),
+        ]
+        arg = 2
+        arg_types = ([int],)
+        return_type = int
+        vm._run_instructions(
+            [
+                Instr("LAMBDA", [arg_types, return_type, body], {}),
+                Instr("PUSH", [arg], {}),
+                Instr("EXEC", [], {}),
+            ]
+        )
+        assert [body, arg, arg + 2] == vm.stack
+
     def test_run_lambda(self):
         vm = VM()
         body = [

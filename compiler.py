@@ -190,8 +190,13 @@ class Compiler:
                 pass
 
         comment = [Comment(f"Storing function {f.name} at {e.vars[f.name]}")]
+        arg_types, return_type = [int], int
         return comment + [
-            Instr("PUSH", [body_instructions + free_var_instructions], {}),
+            Instr(
+                "LAMBDA",
+                [arg_types, return_type, body_instructions + free_var_instructions],
+                {},
+            ),
         ]
 
     @debug
