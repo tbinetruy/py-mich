@@ -1,9 +1,7 @@
 import unittest
+from typing import Callable, Dict, List, Tuple
 
-from typing import Tuple, List, Callable, Dict
-
-from vm_types import Pair, Instr, Array
-
+from vm_types import Array, Instr, Pair
 
 ph = 42  # placeholder
 
@@ -17,6 +15,7 @@ class VMStackException(Exception):
 
     def __init__(self, message):
         self.message = message
+
 
 class VMTypeException(Exception):
     """Raised when type error occurs
@@ -37,13 +36,14 @@ def debug(in_func):
     def out_func(*args, **kwargs):
         self = args[0]
 
-        #if self.isDebug:
+        # if self.isDebug:
         #    print(in_func, args, kwargs)
 
         result = in_func(*args, **kwargs)
 
-        #self._debug()
+        # self._debug()
         return result
+
     return out_func
 
 
@@ -104,10 +104,9 @@ class VM:
                 return "[func]"
             else:
                 return el
+
         stack = [
-            ("*", clean(el))
-            if i == self.sp
-            else clean(el)
+            ("*", clean(el)) if i == self.sp else clean(el)
             for i, el in enumerate(self.stack)
         ]
         return "S: " + str(stack) + " ; sp: ", str(self.sp)
@@ -120,14 +119,21 @@ class VM:
         return self.stack[-1]
 
     def _stack_at_sp(self):
-        return self.stack[self.sp] \
-            if self.sp >= 0 and self.sp <= len(self.stack) \
+        return (
+            self.stack[self.sp]
+            if self.sp >= 0 and self.sp <= len(self.stack)
             else self.get_init_sp()
+        )
 
     def _assert_min_stack_length(self, min_len: int) -> None:
         stack_length = len(self.stack)
         if stack_length < min_len:
-            raise VMStackException("Stack too short, need to be at least of length " + str(min_len) + " but is currently " + str(stack_length))
+            raise VMStackException(
+                "Stack too short, need to be at least of length "
+                + str(min_len)
+                + " but is currently "
+                + str(stack_length)
+            )
 
     def _check_pair(self):
         self._assert_min_stack_length(1)
@@ -212,7 +218,7 @@ class VM:
             raise VMStackException("Cannot pop an empty stack!")
 
         el = self._stack_at_sp()
-        del(self.stack[self.sp])
+        del self.stack[self.sp]
 
         do_not_decrement = self.sp == self.get_init_sp() + 1 and len(self.stack)
         if do_not_decrement:
@@ -245,9 +251,9 @@ class VM:
         self.increment_sp()
 
     @debug
-    def dig(self, jump = None):
+    def dig(self, jump=None):
         tmp = self.stack[self.sp]
-        del(self.stack[self.sp])
+        del self.stack[self.sp]
         if jump is None:
             self.stack += [tmp]
             self.sp = len(self.stack) - 1
@@ -279,22 +285,22 @@ class TestVM(unittest.TestCase):
     def test_run_lambda(self):
         vm = VM()
         body = [
-            Instr('DUP', [], {}),
-            Instr('PUSH', [2], {}),
-            Instr('ADD', [], {}),
+            Instr("DUP", [], {}),
+            Instr("PUSH", [2], {}),
+            Instr("ADD", [], {}),
         ]
         arg = 2
         vm.push(body)
         vm.push(arg)
-        vm._run_instructions([Instr('EXEC', [], {})])
+        vm._run_instructions([Instr("EXEC", [], {})])
         assert [body, arg, arg + 2] == vm.stack
 
     def test_run_instructions(self):
         vm = VM()
         instructions = [
-            Instr('PUSH', [1], {}),
-            Instr('PUSH', [2], {}),
-            Instr('SWAP', [], {}),
+            Instr("PUSH", [1], {}),
+            Instr("PUSH", [2], {}),
+            Instr("SWAP", [], {}),
         ]
         vm._run_instructions(instructions)
         self.assertEqual(vm.stack, [2, 1])

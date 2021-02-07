@@ -336,8 +336,8 @@ a = b
         #       after reassign
         self.assertEqual(vm.stack, [1, 2, 2])
         self.assertEqual(vm.sp, 2)
-        self.assertEqual(c.env.vars['a'], 2)
-        self.assertEqual(c.env.vars['b'], 1)
+        self.assertEqual(c.env.vars["a"], 2)
+        self.assertEqual(c.env.vars["b"], 1)
 
 
 class TestCompilerDefun(unittest.TestCase):

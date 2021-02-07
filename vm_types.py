@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import NewType, Dict, List, Tuple, Callable
+from typing import NewType, Dict, List, Tuple, Callable, Any
 
 
 @dataclass
@@ -10,7 +10,7 @@ class Array:
     Parameters
     ----------
     els: python list representing the Michelson list"""
-    els: List[any]
+    els: List[Any]
 
 @dataclass
 class Pair:
@@ -20,8 +20,8 @@ class Pair:
     ----------
     car: first element
     cdr: second element'''
-    car: any
-    cdr: any
+    car: Any
+    cdr: Any
 
 Addr, VarName = NewType('Address', int), NewType('VarName', str)
 @dataclass
@@ -37,5 +37,5 @@ class Env:
 @dataclass
 class Instr:
     name: str
-    args: List[any]
-    kwargs: Dict[str, any]
+    args: List[Any]
+    kwargs: Dict[str, Any]
