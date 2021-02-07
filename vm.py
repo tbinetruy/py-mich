@@ -82,7 +82,7 @@ class VM:
         self._reset_stack()
 
     def store_lambda(self, args_types, return_type, body) -> None:
-        self.push(body)
+        self._push(body)
 
     def _run_instructions(self, instructions: List[Instr]) -> None:
         for instr in instructions:
@@ -167,21 +167,21 @@ class VM:
     def car(self):
         self._check_pair()
         pair = self.pop()
-        self.push(pair.car)
+        self._push(pair.car)
 
     @debug
     def cdr(self):
         self._check_pair()
         pair = self.pop()
-        self.push(pair.cdr)
+        self._push(pair.cdr)
 
     @debug
     def make_pair(self, car: any, cdr: any):
-        self.push(Pair(car, cdr))
+        self._push(Pair(car, cdr))
 
     @debug
     def make_list(self):
-        self.push(Array([]))
+        self._push(Array([]))
 
     @debug
     def append_before_list(self):
@@ -204,10 +204,13 @@ class VM:
     def increment_sp(self, delta: int = 1):
         self.sp += delta
 
-    @debug
-    def push(self, val):
+    def _push(self, val):
         self.stack.insert(self.sp + 1, val)
         self.increment_sp()
+
+    @debug
+    def push(self, val_type, val):
+        self._push(val)
 
     @debug
     def pop(self):
@@ -267,7 +270,7 @@ class TestVM(unittest.TestCase):
         vm = VM()
         body = [
             Instr("DUP", [], {}),
-            Instr("PUSH", [2], {}),
+            Instr("PUSH", [int, 2], {}),
             Instr("ADD", [], {}),
         ]
         arg = 2
@@ -276,7 +279,7 @@ class TestVM(unittest.TestCase):
         vm._run_instructions(
             [
                 Instr("LAMBDA", [arg_types, return_type, body], {}),
-                Instr("PUSH", [arg], {}),
+                Instr("PUSH", [int, arg], {}),
                 Instr("EXEC", [], {}),
             ]
         )
@@ -286,20 +289,20 @@ class TestVM(unittest.TestCase):
         vm = VM()
         body = [
             Instr("DUP", [], {}),
-            Instr("PUSH", [2], {}),
+            Instr("PUSH", [int, 2], {}),
             Instr("ADD", [], {}),
         ]
         arg = 2
-        vm.push(body)
-        vm.push(arg)
+        vm._push(body)
+        vm._push(arg)
         vm._run_instructions([Instr("EXEC", [], {})])
         assert [body, arg, arg + 2] == vm.stack
 
     def test_run_instructions(self):
         vm = VM()
         instructions = [
-            Instr("PUSH", [1], {}),
-            Instr("PUSH", [2], {}),
+            Instr("PUSH", [int, 1], {}),
+            Instr("PUSH", [int, 2], {}),
             Instr("SWAP", [], {}),
         ]
         vm._run_instructions(instructions)
@@ -309,7 +312,7 @@ class TestVM(unittest.TestCase):
         vm = VM()
         vm._reset_stack()
 
-        vm.push(1)
+        vm._push(1)
         self.assertRaises(VMTypeException, vm._check_pair)
         vm.make_pair(1, 2)
         try:
@@ -322,16 +325,16 @@ class TestVM(unittest.TestCase):
         vm = VM()
 
         b = 2
-        vm.push(1)
-        vm.push(2)
+        vm._push(1)
+        vm._push(2)
 
         self.assertEqual(vm._stack_top(), b)
 
     def test_stack_at_sp(self):
         vm = VM()
         a, b = 1, 2
-        vm.push(a)
-        vm.push(b)
+        vm._push(a)
+        vm._push(b)
         vm.decrement_sp()
         self.assertEqual(vm._stack_at_sp(), a)
 
@@ -358,13 +361,13 @@ class TestVM(unittest.TestCase):
         vm = VM()
 
         a, b, c = 1, 2, 3
-        vm.push(a)
-        vm.push(b)
+        vm.push(int, a)
+        vm.push(int, b)
         # stack grows towards larger addresses
         self.assertEqual(vm.stack, [a, b])
 
         vm.decrement_sp()
-        vm.push(c)
+        vm.push(int, c)
         self.assertEqual(vm.stack, [a, c, b])
 
     def test_pop(self):
@@ -375,8 +378,8 @@ class TestVM(unittest.TestCase):
         self.assertRaises(VMStackException, vm.pop)
 
         ### check that we can pop on top of the stack
-        vm.push(a)
-        vm.push(b)
+        vm._push(a)
+        vm._push(b)
         vm.pop()
         self.assertEqual(vm.stack, [a])
         self.assertEqual(vm.sp, VM.get_init_sp() + 1)
@@ -384,15 +387,15 @@ class TestVM(unittest.TestCase):
         ### check that we can pop inside the stack
 
         # case 1: sp = 0 but stack is not empty => we keep sp untouched
-        vm.push(c)
+        vm._push(c)
         vm.decrement_sp()
         vm.pop()
         self.assertEqual(vm.stack, [c])
         self.assertEqual(vm.sp, VM.get_init_sp() + 1)
 
         # case 1: sp != 0 => we keep decrement sp
-        vm.push(b)
-        vm.push(a)
+        vm._push(b)
+        vm._push(a)
         vm.decrement_sp()
         vm.pop()
         self.assertEqual(vm.stack, [c, a])
@@ -437,20 +440,20 @@ class TestVM(unittest.TestCase):
 
         # Raises if stack too small
         self.assertRaises(VMStackException, vm.swap)
-        vm.push(a)
+        vm._push(a)
         self.assertRaises(VMStackException, vm.swap)
 
         # swaps top of stack
-        vm.push(b)
-        vm.push(c)
+        vm._push(b)
+        vm._push(c)
         vm.swap()
         self.assertEqual(vm.stack, [1, 3, 2])
 
         # swaps inside stack
         vm._reset_stack()
-        vm.push(a)
-        vm.push(b)
-        vm.push(c)
+        vm._push(a)
+        vm._push(b)
+        vm._push(c)
         vm.decrement_sp()
         vm.swap()
         self.assertEqual(vm.stack, [2, 1, 3])
@@ -467,9 +470,9 @@ class TestVM(unittest.TestCase):
         self.assertRaises(VMStackException, vm.dup)
 
         a, b, c = 1, 2, 3
-        vm.push(a)
-        vm.push(b)
-        vm.push(c)
+        vm._push(a)
+        vm._push(b)
+        vm._push(c)
         vm.decrement_sp()
         vm.dup()
         self.assertEqual(vm.stack, [a, b, b, c])
@@ -479,10 +482,10 @@ class TestVM(unittest.TestCase):
         vm = VM()
 
         a, b, c, d = 1, 2, 3, 4
-        vm.push(a)
-        vm.push(b)
-        vm.push(c)
-        vm.push(d)
+        vm._push(a)
+        vm._push(b)
+        vm._push(c)
+        vm._push(d)
         vm.add()
         self.assertEqual(vm.stack, [a, b, c + d])
         vm.decrement_sp()
@@ -495,9 +498,9 @@ class TestVM(unittest.TestCase):
         vm = VM()
 
         a, b, c = 1, 2, 3
-        vm.push(a)
-        vm.push(b)
-        vm.push(c)
+        vm._push(a)
+        vm._push(b)
+        vm._push(c)
         vm.decrement_sp()
         vm.decrement_sp()
         vm.dig()
@@ -508,9 +511,9 @@ class TestVM(unittest.TestCase):
 
         a, b = 1, 2
         vm.make_list()
-        vm.push(a)
+        vm._push(a)
         vm.append_before_list()
-        vm.push(b)
+        vm._push(b)
         vm.append_before_list()
         self.assertEqual(vm.stack[0].els, [b, a])
 
