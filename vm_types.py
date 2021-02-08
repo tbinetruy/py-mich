@@ -144,7 +144,15 @@ def entrypoints_to_tree(entrypoints: List[Entrypoint]):
         i = 0
         while i < len(tree_leaves):
             try:
-                tree.append(Instr("IF_LEFT", [tree_leaves[i], tree_leaves[i + 1]], {}))
+                cond_true = (
+                    tree_leaves[i] if type(tree_leaves[i]) == list else [tree_leaves[i]]
+                )
+                cond_false = (
+                    tree_leaves[i + 1]
+                    if type(tree_leaves[i + 1]) == list
+                    else [tree_leaves[i + 1]]
+                )
+                tree.append(Instr("IF_LEFT", [cond_true, cond_false], {}))
             except IndexError:
                 tree.append(tree_leaves[i])
             i += 2
@@ -299,14 +307,16 @@ class TestContract(unittest.TestCase):
         expected_result = Instr(
             "IF_LEFT",
             [
-                Instr(
-                    "IF_LEFT",
-                    [
-                        contract.entrypoints["add"].instructions,
-                        contract.entrypoints["div"].instructions,
-                    ],
-                    {},
-                ),
+                [
+                    Instr(
+                        "IF_LEFT",
+                        [
+                            contract.entrypoints["add"].instructions,
+                            contract.entrypoints["div"].instructions,
+                        ],
+                        {},
+                    )
+                ],
                 contract.entrypoints["sub"].instructions,
             ],
             {},

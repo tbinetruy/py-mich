@@ -2,8 +2,8 @@ import unittest
 from typing import Callable, Dict, List, Tuple
 
 from instr_types import Int
-from vm_types import (Array, Contract, FunctionPrototype, Instr, Left, Or,
-                      Pair, Right)
+from vm_types import (Array, Contract, Entrypoint, FunctionPrototype, Instr,
+                      Left, Or, Pair, Right)
 
 ph = 42  # placeholder
 
@@ -290,6 +290,57 @@ class VM:
         else:
             self.stack.insert(self.sp + jump, tmp)
             self.sp += jump
+
+
+class TestContract(unittest.TestCase):
+    def test_contract(self):
+        contract = Contract(
+            storage=10,
+            storage_type=Int(),
+            entrypoints={
+                "add": Entrypoint(
+                    FunctionPrototype(Int(), Int()),
+                    [
+                        Instr("PUSH", [Int(), 1], {}),
+                        Instr("ADD", [], {}),
+                    ],
+                ),
+                "sub": Entrypoint(
+                    FunctionPrototype(Int(), Int()),
+                    [
+                        Instr("PUSH", [Int(), 2], {}),
+                        Instr("ADD", [], {}),
+                    ],
+                ),
+                "div": Entrypoint(
+                    FunctionPrototype(Int(), Int()),
+                    [
+                        Instr("PUSH", [Int(), 3], {}),
+                        Instr("ADD", [], {}),
+                    ],
+                ),
+            },
+            instructions=[],
+        )
+        instructions = [contract.get_contract_body()]
+
+        vm = VM()
+        contract_param = contract.make_contract_param("add", 1)
+        vm._push(contract_param)
+        vm._run_instructions(instructions)
+        self.assertEqual(vm.stack, [2])
+
+        vm = VM()
+        contract_param = contract.make_contract_param("sub", 1)
+        vm._push(contract_param)
+        vm._run_instructions(instructions)
+        self.assertEqual(vm.stack, [3])
+
+        vm = VM()
+        contract_param = contract.make_contract_param("div", 1)
+        vm._push(contract_param)
+        vm._run_instructions(instructions)
+        self.assertEqual(vm.stack, [4])
 
 
 class TestVM(unittest.TestCase):
