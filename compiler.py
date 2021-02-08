@@ -6,7 +6,7 @@ from typing import List, Optional
 import instr_types as t
 from helpers import ast_to_tree
 from vm import VM
-from vm_types import Array, Env, Instr
+from vm_types import Array, Contract, Env, FunctionPrototype, Instr
 
 
 def debug(cb):
@@ -28,6 +28,7 @@ class Compiler:
     def __init__(self, src: str, isDebug=True):
         self.ast = ast.parse(src)
         self.isDebug = isDebug
+        self.type_parser = t.TypeParser()
 
     def print_ast(self):
         print(pprint.pformat(ast_to_tree(self.ast)))
@@ -148,13 +149,22 @@ class Compiler:
             e,
         )
 
+    def _get_function_prototype(self, f: ast.FunctionDef) -> FunctionPrototype:
+        return FunctionPrototype(
+            self.type_parser.parse(f.args.args[0].annotation),
+            self.type_parser.parse(f.returns),
+        )
+
     @debug
-    def compile_defun(self, f: ast.FunctionDef, e: Env):
+    def compile_defun(self, f: ast.FunctionDef, e: Env) -> List[Instr]:
         e.sp += 1  # account for body push
 
         e.vars[f.name] = e.sp
         e.args[f.name] = f.args.args[0].arg
 
+        ast.dump(f.args.args[0])
+        prototype = self._get_function_prototype(f)
+        arg_type, return_type = prototype.arg_type, prototype.return_type
         # get init env keys
         init_var_names = set(e.vars.keys())
 
@@ -191,11 +201,10 @@ class Compiler:
                 pass
 
         comment = [Comment(f"Storing function {f.name} at {e.vars[f.name]}")]
-        arg_types, return_type = [int], int
         return comment + [
             Instr(
                 "LAMBDA",
-                [arg_types, return_type, body_instructions + free_var_instructions],
+                [arg_type, return_type, body_instructions + free_var_instructions],
                 {},
             ),
         ]
@@ -345,12 +354,27 @@ class TestCompilerDefun(unittest.TestCase):
     def test_func_def(self):
         vm = VM(isDebug=False)
         source = """baz = 1
-def foo(a):
+def foo(a: int) -> int:
     b = 2
     return a + b + 3
 bar = foo(baz)
 fff = foo(bar)
 foo(foo(bar))
+"""
+        c = Compiler(source, isDebug=False)
+        instructions = c.compile(c.ast)
+        vm._run_instructions(instructions)
+        self.assertEqual(vm.stack[-1], 16)
+        self.assertEqual(instructions[3].args[0], t.Int())
+        self.assertEqual(instructions[3].args[1], t.Int())
+        self.assertEqual(len(vm.stack), 5)
+
+    def todo_test_multiple_args_func(self):
+        vm = VM(isDebug=False)
+        source = """
+def add(a, b):
+    return a + b
+foo(1, 2)
 """
         c = Compiler(source, isDebug=False)
         instructions = c.compile(c.ast)

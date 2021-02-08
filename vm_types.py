@@ -24,6 +24,12 @@ class Pair:
     cdr: Any
 
 Addr, VarName = NewType('Address', int), NewType('VarName', str)
+
+@dataclass
+class FunctionPrototype:
+    arg_type: t.Type
+    return_type: t.Type
+
 @dataclass
 class Env:
     vars: NewType('Environment', Dict[VarName, Addr])
@@ -39,3 +45,10 @@ class Instr:
     name: str
     args: List[Any]
     kwargs: Dict[str, Any]
+
+
+@dataclass
+class Entrypoint:
+    prototype: FunctionPrototype
+    instructions: List[Instr]
+
