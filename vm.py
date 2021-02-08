@@ -1,8 +1,9 @@
 import unittest
 from typing import Callable, Dict, List, Tuple
-from instr_types import Int
 
-from vm_types import Array, Instr, Pair, Contract, FunctionPrototype
+from instr_types import Int
+from vm_types import (Array, Contract, FunctionPrototype, Instr, Left, Or,
+                      Pair, Right)
 
 ph = 42  # placeholder
 
@@ -77,6 +78,7 @@ class VM:
             "EXEC": self.run_lambda,
             "LAMBDA": self.store_lambda,
             "CONS": self.append_before_list,
+            "IF_LEFT": self.if_left,
             "COMMENT": lambda *args, **kwargs: 1,
         }
 
@@ -139,6 +141,17 @@ class VM:
                 + str(stack_length)
             )
 
+    def _check_union(self):
+        """Checks that the stack top element is a union type."""
+        self._assert_min_stack_length(1)
+
+        actual_t = type(self._stack_at_sp())
+        expected_t = [Left, Right]
+        if actual_t not in expected_t:
+            raise VMTypeException(
+                expected_t, actual_t, "Stack top element is not a union."
+            )
+
     def _check_pair(self):
         self._assert_min_stack_length(1)
 
@@ -146,6 +159,16 @@ class VM:
         actual_t = Pair(ph, ph).__class__
         if expected_t != actual_t:
             raise VMTypeException(expected_t, actual_t, "Car requires a pair")
+
+    @debug
+    def if_left(self, cond_true, cond_false) -> None:
+        self._check_union()
+        union = self.pop()
+        self._push(union.value)
+        if type(union) == Left:
+            self._run_instructions(cond_true)
+        else:
+            self._run_instructions(cond_false)
 
     @debug
     def run_lambda(self):
@@ -270,6 +293,66 @@ class VM:
 
 
 class TestVM(unittest.TestCase):
+    def test_if_left(self):
+        vm = VM()
+        instructions = [
+            Instr("PUSH", [Int(), Left(10)], {}),
+            Instr(
+                "IF_LEFT",
+                [
+                    [
+                        Instr("PUSH", [Int(), 10], {}),
+                        Instr("ADD", [], {}),
+                    ],
+                    [
+                        Instr("PUSH", [Int(), 20], {}),
+                        Instr("ADD", [], {}),
+                    ],
+                ],
+                {},
+            ),
+        ]
+        vm._run_instructions(instructions)
+        self.assertEqual(vm.stack, [20])
+
+    def test_if_not_left(self):
+        vm = VM()
+        instructions = [
+            Instr("PUSH", [Int(), Right(10)], {}),
+            Instr(
+                "IF_LEFT",
+                [
+                    [
+                        Instr("PUSH", [Int(), 10], {}),
+                        Instr("ADD", [], {}),
+                    ],
+                    [
+                        Instr("PUSH", [Int(), 20], {}),
+                        Instr("ADD", [], {}),
+                    ],
+                ],
+                {},
+            ),
+        ]
+        vm._run_instructions(instructions)
+        self.assertEqual(vm.stack, [30])
+
+    def test_if_left_stack_top_type(self):
+        vm = VM()
+        instructions = [
+            Instr("PUSH", [Int(), 10], {}),
+            Instr(
+                "IF_LEFT",
+                [[], []],
+                {},
+            ),
+        ]
+        try:
+            vm._run_instructions(instructions)
+            assert 0
+        except VMTypeException:
+            assert 1
+
     def test_store_lambda(self):
         vm = VM()
         body = [
