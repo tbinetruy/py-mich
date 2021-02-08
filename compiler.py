@@ -3,6 +3,7 @@ import pprint
 import unittest
 from typing import List, Optional
 
+import instr_types as t
 from helpers import ast_to_tree
 from vm import VM
 from vm_types import Array, Env, Instr
@@ -61,7 +62,7 @@ class Compiler:
     def compile_num(self, num: ast.Constant, e: Env) -> List[Instr]:
         e.sp += 1  # Account for PUSH
         return [
-            Instr("PUSH", [int, num.value], {}),
+            Instr("PUSH", [t.Int(), num.value], {}),
         ]
 
     @debug

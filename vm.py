@@ -1,7 +1,8 @@
 import unittest
 from typing import Callable, Dict, List, Tuple
+from instr_types import Int
 
-from vm_types import Array, Instr, Pair
+from vm_types import Array, Instr, Pair, Contract, FunctionPrototype
 
 ph = 42  # placeholder
 
@@ -83,6 +84,9 @@ class VM:
 
     def store_lambda(self, args_types, return_type, body) -> None:
         self._push(body)
+
+    def run_contract(self, contract: Contract):
+        pass
 
     def _run_instructions(self, instructions: List[Instr]) -> None:
         for instr in instructions:
@@ -270,16 +274,16 @@ class TestVM(unittest.TestCase):
         vm = VM()
         body = [
             Instr("DUP", [], {}),
-            Instr("PUSH", [int, 2], {}),
+            Instr("PUSH", [Int, 2], {}),
             Instr("ADD", [], {}),
         ]
         arg = 2
-        arg_types = ([int],)
-        return_type = int
+        arg_types = ([Int],)
+        return_type = Int
         vm._run_instructions(
             [
                 Instr("LAMBDA", [arg_types, return_type, body], {}),
-                Instr("PUSH", [int, arg], {}),
+                Instr("PUSH", [Int, arg], {}),
                 Instr("EXEC", [], {}),
             ]
         )
@@ -289,7 +293,7 @@ class TestVM(unittest.TestCase):
         vm = VM()
         body = [
             Instr("DUP", [], {}),
-            Instr("PUSH", [int, 2], {}),
+            Instr("PUSH", [Int, 2], {}),
             Instr("ADD", [], {}),
         ]
         arg = 2
@@ -301,8 +305,8 @@ class TestVM(unittest.TestCase):
     def test_run_instructions(self):
         vm = VM()
         instructions = [
-            Instr("PUSH", [int, 1], {}),
-            Instr("PUSH", [int, 2], {}),
+            Instr("PUSH", [Int, 1], {}),
+            Instr("PUSH", [Int, 2], {}),
             Instr("SWAP", [], {}),
         ]
         vm._run_instructions(instructions)
@@ -361,13 +365,13 @@ class TestVM(unittest.TestCase):
         vm = VM()
 
         a, b, c = 1, 2, 3
-        vm.push(int, a)
-        vm.push(int, b)
+        vm.push(Int, a)
+        vm.push(Int, b)
         # stack grows towards larger addresses
         self.assertEqual(vm.stack, [a, b])
 
         vm.decrement_sp()
-        vm.push(int, c)
+        vm.push(Int, c)
         self.assertEqual(vm.stack, [a, c, b])
 
     def test_pop(self):
