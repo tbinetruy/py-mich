@@ -225,21 +225,6 @@ class Contract:
         return entrypoints_to_tree(entrypoints)
 
 
-contract = Contract(
-    storage=10,
-    storage_type=t.Int(),
-    entrypoints={
-        "add": FunctionPrototype(t.Int(), t.Int()),
-        "div": FunctionPrototype(t.Int(), t.Int()),
-        "mul": FunctionPrototype(t.Int(), t.Int()),
-        "sub": FunctionPrototype(t.Int(), t.Int()),
-    },
-    instructions=[],
-)
-# print(contract.get_parameter_type())
-# print(Or(Or(t.Int(), t.Int()), Or(t.Int(), t.Int())))
-
-
 class TestContract(unittest.TestCase):
     def test_get_contract_body(self):
         contract = Contract(
