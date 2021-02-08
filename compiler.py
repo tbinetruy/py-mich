@@ -86,13 +86,14 @@ class Compiler:
             e.sp += 1  # Account for DUP
             return comment + instructions
         elif type(name.ctx) == ast.Store:
+            # will get set to actual value in `compile_assign`
             e.vars[var_name.id] = 42
             return []
         else:
-            return NotImplementedError
+            raise NotImplementedError
 
     @debug
-    def compile_binop(self, t: ast.Name, e: Env) -> List[Instr]:
+    def compile_binop(self, t: ast.BinOp, e: Env) -> List[Instr]:
         left = self.compile(t.left, e)
         right = self.compile(t.right, e)
         op = self.compile(t.op, e)
@@ -210,7 +211,7 @@ class Compiler:
         ]
 
     @debug
-    def compile_fcall(self, f: ast.FunctionDef, e: Env):
+    def compile_fcall(self, f: ast.Call, e: Env):
         # We work on an env copy to prevent from polluting the environment
         # with vars that we'd need to remove. We have to remember to pass
         # back the new stack pointer however
