@@ -1,5 +1,5 @@
 import unittest
-from typing import Callable, Dict, List, Tuple
+from typing import Any, Callable, Dict, List, Tuple
 
 from instr_types import Int
 from vm_types import (Array, Contract, Entrypoint, FunctionPrototype, Instr,
@@ -87,8 +87,14 @@ class VM:
     def store_lambda(self, args_types, return_type, body) -> None:
         self._push(body)
 
-    def run_contract(self, contract: Contract):
-        pass
+    def run_contract(
+        self, contract: Contract, entrypoint_name: str, entrypoint_param: Any
+    ) -> None:
+        contract_param = contract.make_contract_param(entrypoint_name, entrypoint_param)
+        body_instructions = [contract.get_contract_body()]
+        self._push(Pair(car=contract_param, cdr=contract.storage))
+        self._run_instructions(contract.instructions + body_instructions)
+        contract.storage = self.stack[-1]
 
     def _run_instructions(self, instructions: List[Instr]) -> None:
         for instr in instructions:
@@ -250,11 +256,12 @@ class VM:
         el = self._stack_at_sp()
         del self.stack[self.sp]
 
-        do_not_decrement = self.sp == self.get_init_sp() + 1 and len(self.stack)
-        if do_not_decrement:
-            pass
-        else:
-            self.decrement_sp()
+        self.decrement_sp()
+        # do_not_decrement = self.sp == self.get_init_sp() + 1 and len(self.stack)
+        # if do_not_decrement:
+        #     pass
+        # else:
+        #     self.decrement_sp()
 
         return el
 
@@ -293,6 +300,54 @@ class VM:
 
 
 class TestContract(unittest.TestCase):
+    def test_run_contract(self):
+        contract = Contract(
+            storage=10,
+            storage_type=Int(),
+            entrypoints={
+                "add": Entrypoint(
+                    FunctionPrototype(Int(), Int()),
+                    [
+                        Instr("PUSH", [Int(), 1], {}),
+                        Instr("ADD", [], {}),
+                        Instr("DIP", [], {}),
+                        Instr("DROP", [], {}),
+                    ],
+                ),
+                "sub": Entrypoint(
+                    FunctionPrototype(Int(), Int()),
+                    [
+                        Instr("PUSH", [Int(), 2], {}),
+                        Instr("ADD", [], {}),
+                        Instr("DIP", [], {}),
+                        Instr("DROP", [], {}),
+                    ],
+                ),
+                "div": Entrypoint(
+                    FunctionPrototype(Int(), Int()),
+                    [
+                        Instr("PUSH", [Int(), 3], {}),
+                        Instr("ADD", [], {}),
+                        Instr("DIP", [], {}),
+                        Instr("DROP", [], {}),
+                    ],
+                ),
+            },
+            instructions=[
+                Instr("DUP", [], {}),  # stack: [(param, storage), * (param, storage)]
+                Instr("CAR", [], {}),  #        [(param, storage), * param]
+                Instr("DIP", [], {}),  #        [* (param, storage), param]
+                Instr("CDR", [], {}),  # stack: [* storage, param]
+                Instr("IIP", [], {}),
+            ],
+        )
+        instructions = [contract.get_contract_body()]
+
+        vm = VM()
+        vm.run_contract(contract, "add", 10)
+        self.assertEqual(contract.storage, 11)
+        self.assertEqual(vm.stack, [11])
+
     def test_contract(self):
         contract = Contract(
             storage=10,
@@ -566,11 +621,19 @@ class TestVM(unittest.TestCase):
 
     def test_cdr(self):
         vm = VM()
-
         a, b = 1, 2
         vm.make_pair(a, b)
         cdr = vm.cdr()
         self.assertEqual(vm._stack_top(), b)
+
+        vm = VM()
+        a, b = 1, 2
+        vm.make_pair(a, b)
+        vm._push(10)
+        vm.decrement_sp()
+        vm.cdr()
+        self.assertEqual(vm.stack, [2, 10])
+        self.assertEqual(vm.sp, 0)
 
     def test_swap(self):
         vm = VM()
