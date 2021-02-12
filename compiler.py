@@ -86,7 +86,6 @@ class Compiler:
             instructions = [
                 Instr("DIG", [jump_length], {}),
                 Instr("DUP", [], {}),
-                Instr("SWAP", [], {}),
                 Instr("DUG", [jump_length + 1], {}),
             ]
             e.sp += 1  # Account for DUP
