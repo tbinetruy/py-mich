@@ -1,3 +1,4 @@
+import copy
 import unittest
 from typing import Any, Callable, Dict, List, Tuple
 
@@ -66,7 +67,7 @@ class VM:
             "ADD": self.add,
             "CAR": self.car,
             "CDR": self.cdr,
-            "DIP": self.decrement_sp,
+            "DIP": self.dip,
             "DIG": self.dig,
             "DROP": self.pop,
             "DUP": self.dup,
@@ -130,13 +131,6 @@ class VM:
     def _stack_top(self):
         return self.stack[-1]
 
-    def _stack_at_sp(self):
-        return (
-            self.stack[self.sp]
-            if self.sp >= 0 and self.sp <= len(self.stack)
-            else self.get_init_sp()
-        )
-
     def _assert_min_stack_length(self, min_len: int) -> None:
         stack_length = len(self.stack)
         if stack_length < min_len:
@@ -151,7 +145,7 @@ class VM:
         """Checks that the stack top element is a union type."""
         self._assert_min_stack_length(1)
 
-        actual_t = type(self._stack_at_sp())
+        actual_t = type(self.stack[-1])
         expected_t = [Left, Right]
         if actual_t not in expected_t:
             raise VMTypeException(
@@ -161,8 +155,8 @@ class VM:
     def _check_pair(self):
         self._assert_min_stack_length(1)
 
-        expected_t = self._stack_top().__class__
-        actual_t = Pair(ph, ph).__class__
+        expected_t = type(self.stack[-1])
+        actual_t = Pair
         if expected_t != actual_t:
             raise VMTypeException(expected_t, actual_t, "Car requires a pair")
 
@@ -182,7 +176,14 @@ class VM:
 
         if self.isDebug:
             print("@@@@@@@ Start executing function @@@@@@@")
-        self._run_instructions(self.stack[self.sp - 1])
+
+        arg = self.pop()
+        function_body = self.pop()
+        protected_stack = self.stack
+        self.stack = [arg]
+        self._run_instructions(function_body)
+        self.stack = protected_stack + self.stack
+
         if self.isDebug:
             print("@@@@@@@ End executing function @@@@@@@")
 
@@ -190,8 +191,8 @@ class VM:
     def add(self):
         self._assert_min_stack_length(2)
         a = self.pop()
-        b = self.stack[self.sp]
-        self.stack[self.sp] = a + b
+        b = self.pop()
+        self._push(a + b)
 
     def get_f_from_instr_name(self, instr_name: str):
         return self.instruction_mapping[instr_name]
@@ -209,7 +210,7 @@ class VM:
         self._push(pair.cdr)
 
     @debug
-    def make_pair(self, car: any, cdr: any):
+    def make_pair(self, car: Any, cdr: Any):
         self._push(Pair(car, cdr))
 
     @debug
@@ -218,16 +219,30 @@ class VM:
 
     @debug
     def append_before_list(self):
-        self._assert_min_stack_length(1)
+        self._assert_min_stack_length(2)
 
         el = self.pop()
+        array = self.pop()
 
-        actual_t = self._stack_top().__class__
-        expected_t = Array([]).__class__
+        actual_t = type(array)
+        expected_t = Array
         if expected_t != actual_t:
             raise VMTypeException(expected_t, actual_t, "CONS requires a list")
 
-        self.stack[self.sp] = Array([el] + self._stack_at_sp().els)
+        self._push(Array([el] + array.els))
+
+    @debug
+    def dip(self, delta: int = 1, instructions: List[Instr] = []):
+        self._assert_min_stack_length(delta)
+
+        protected_stack_top = []
+        if delta != 0:
+            protected_stack_top = self.stack[-delta:]
+            self.stack = self.stack[:-delta]
+
+        self._run_instructions(instructions)
+
+        self.stack += protected_stack_top
 
     @debug
     def decrement_sp(self, delta: int = 1):
@@ -238,8 +253,7 @@ class VM:
         self.sp += delta
 
     def _push(self, val):
-        self.stack.insert(self.sp + 1, val)
-        self.increment_sp()
+        self.stack += [val]
 
     @debug
     def push(self, val_type, val):
@@ -250,54 +264,34 @@ class VM:
         """Removes and returns the element int the stack at the
         stack pointer location and decrements it *unless* sp is the
         bottom of a non-empty stack in which case it does not change."""
-        if not len(self.stack):
-            raise VMStackException("Cannot pop an empty stack!")
+        self._assert_min_stack_length(1)
 
-        el = self._stack_at_sp()
-        del self.stack[self.sp]
-
-        self.decrement_sp()
-        # do_not_decrement = self.sp == self.get_init_sp() + 1 and len(self.stack)
-        # if do_not_decrement:
-        #     pass
-        # else:
-        #     self.decrement_sp()
+        el = self.stack[-1]
+        del self.stack[-1]
 
         return el
 
     @debug
     def swap(self):
-        if len(self.stack) < 2:
-            raise VMStackException("Cannot swap less than two elements.")
+        self._assert_min_stack_length(2)
 
-        min_sp = self.get_init_sp() + 2
-        if self.sp < min_sp:
-            raise VMStackException("Stack pointer needs to be at least " + str(min_sp))
-
-        cache_current_el = self.stack[self.sp]
-        cache_previous_el = self.stack[self.sp - 1]
-        self.stack[self.sp] = cache_previous_el
-        self.stack[self.sp - 1] = cache_current_el
+        a = self.pop()
+        b = self.pop()
+        self._push(a)
+        self._push(b)
 
     @debug
     def dup(self):
-        if len(self.stack) < 1:
-            raise VMStackException("Cannot duplicate on an empty stack")
+        self._assert_min_stack_length(1)
 
-        self.stack.insert(self.sp, self.stack[self.sp])
-        self.increment_sp()
+        self.stack += [copy.deepcopy(self.stack[-1])]
 
     @debug
     def dig(self, jump=None):
-        tmp = self.stack[self.sp]
-        del self.stack[self.sp]
-        if jump is None:
-            self.stack += [tmp]
-            self.sp = len(self.stack) - 1
-        else:
-            self.stack.insert(self.sp + jump, tmp)
-            self.sp += jump
-
+        reverse_index = - jump - 1
+        el_to_dig = self.stack[reverse_index]
+        del self.stack[reverse_index]
+        self.stack.append(el_to_dig)
 
 class TestContract(unittest.TestCase):
     def test_run_contract(self):
@@ -310,8 +304,7 @@ class TestContract(unittest.TestCase):
                     [
                         Instr("PUSH", [Int(), 1], {}),
                         Instr("ADD", [], {}),
-                        Instr("DIP", [], {}),
-                        Instr("DROP", [], {}),
+                        Instr("DIP", [1, [Instr("DROP", [], {})]], {}),
                     ],
                 ),
                 "sub": Entrypoint(
@@ -319,8 +312,7 @@ class TestContract(unittest.TestCase):
                     [
                         Instr("PUSH", [Int(), 2], {}),
                         Instr("ADD", [], {}),
-                        Instr("DIP", [], {}),
-                        Instr("DROP", [], {}),
+                        Instr("DIP", [1, [Instr("DROP", [], {})]], {}),
                     ],
                 ),
                 "div": Entrypoint(
@@ -328,20 +320,18 @@ class TestContract(unittest.TestCase):
                     [
                         Instr("PUSH", [Int(), 3], {}),
                         Instr("ADD", [], {}),
-                        Instr("DIP", [], {}),
-                        Instr("DROP", [], {}),
+                        Instr("DIP", [1, [Instr("DROP", [], {})]], {}),
                     ],
                 ),
             },
             instructions=[
-                Instr("DUP", [], {}),  # stack: [(param, storage), * (param, storage)]
-                Instr("CAR", [], {}),  #        [(param, storage), * param]
-                Instr("DIP", [], {}),  #        [* (param, storage), param]
-                Instr("CDR", [], {}),  # stack: [* storage, param]
-                Instr("IIP", [], {}),
+                Instr("DUP", [], {}),     # stack: [(param, storage), * (param, storage)]
+                Instr("CAR", [], {}),     #        [(param, storage), * param]
+                Instr("DIP", [1, [        #        [* (param, storage), param]
+                    Instr("CDR", [], {})  # stack: [* storage, param]
+                ]], {}),
             ],
         )
-        instructions = [contract.get_contract_body()]
 
         vm = VM()
         vm.run_contract(contract, "add", 10)
@@ -462,7 +452,6 @@ class TestVM(unittest.TestCase):
     def test_store_lambda(self):
         vm = VM()
         body = [
-            Instr("DUP", [], {}),
             Instr("PUSH", [Int, 2], {}),
             Instr("ADD", [], {}),
         ]
@@ -476,20 +465,19 @@ class TestVM(unittest.TestCase):
                 Instr("EXEC", [], {}),
             ]
         )
-        assert [body, arg, arg + 2] == vm.stack
+        assert [arg + 2] == vm.stack
 
     def test_run_lambda(self):
         vm = VM()
         body = [
             Instr("DUP", [], {}),
-            Instr("PUSH", [Int, 2], {}),
             Instr("ADD", [], {}),
         ]
         arg = 2
         vm._push(body)
         vm._push(arg)
         vm._run_instructions([Instr("EXEC", [], {})])
-        assert [body, arg, arg + 2] == vm.stack
+        assert [arg * 2] == vm.stack
 
     def test_run_instructions(self):
         vm = VM()
@@ -523,14 +511,6 @@ class TestVM(unittest.TestCase):
 
         self.assertEqual(vm._stack_top(), b)
 
-    def test_stack_at_sp(self):
-        vm = VM()
-        a, b = 1, 2
-        vm._push(a)
-        vm._push(b)
-        vm.decrement_sp()
-        self.assertEqual(vm._stack_at_sp(), a)
-
     def test_reset_stack(self):
         vm = VM()
         vm._reset_stack()
@@ -556,12 +536,9 @@ class TestVM(unittest.TestCase):
         a, b, c = 1, 2, 3
         vm.push(Int, a)
         vm.push(Int, b)
-        # stack grows towards larger addresses
-        self.assertEqual(vm.stack, [a, b])
-
-        vm.decrement_sp()
         vm.push(Int, c)
-        self.assertEqual(vm.stack, [a, c, b])
+        # stack grows towards larger addresses
+        self.assertEqual(vm.stack, [a, b, c])
 
     def test_pop(self):
         vm = VM()
@@ -575,31 +552,15 @@ class TestVM(unittest.TestCase):
         vm._push(b)
         vm.pop()
         self.assertEqual(vm.stack, [a])
-        self.assertEqual(vm.sp, VM.get_init_sp() + 1)
 
-        ### check that we can pop inside the stack
-
-        # case 1: sp = 0 but stack is not empty => we keep sp untouched
-        vm._push(c)
-        vm.decrement_sp()
         vm.pop()
-        self.assertEqual(vm.stack, [c])
-        self.assertEqual(vm.sp, VM.get_init_sp() + 1)
-
-        # case 1: sp != 0 => we keep decrement sp
-        vm._push(b)
-        vm._push(a)
-        vm.decrement_sp()
-        vm.pop()
-        self.assertEqual(vm.stack, [c, a])
-        self.assertEqual(vm.sp, VM.get_init_sp() + 1)
+        self.assertRaises(VMStackException, vm.pop)
 
     def test_make_list(self):
         vm = VM()
 
         a, b = 1, 2
         vm.make_list()
-        self.assertEqual(vm.sp, VM.get_init_sp() + 1)
         self.assertEqual(vm.stack[-1].__class__, Array([]).__class__)
 
     def test_make_pair(self):
@@ -607,9 +568,7 @@ class TestVM(unittest.TestCase):
 
         a, b = 1, 2
         vm.make_pair(a, b)
-        self.assertEqual(vm.sp, VM.get_init_sp() + 1)
-        ph = 42  # placeholder, just need the pair instance class
-        self.assertEqual(vm.stack[-1].__class__, Pair(ph, ph).__class__)
+        self.assertEqual([Pair(a, b)], vm.stack)
 
     def test_car(self):
         vm = VM()
@@ -623,17 +582,8 @@ class TestVM(unittest.TestCase):
         vm = VM()
         a, b = 1, 2
         vm.make_pair(a, b)
-        cdr = vm.cdr()
-        self.assertEqual(vm._stack_top(), b)
-
-        vm = VM()
-        a, b = 1, 2
-        vm.make_pair(a, b)
-        vm._push(10)
-        vm.decrement_sp()
         vm.cdr()
-        self.assertEqual(vm.stack, [2, 10])
-        self.assertEqual(vm.sp, 0)
+        self.assertEqual(vm._stack_top(), b)
 
     def test_swap(self):
         vm = VM()
@@ -650,21 +600,6 @@ class TestVM(unittest.TestCase):
         vm.swap()
         self.assertEqual(vm.stack, [1, 3, 2])
 
-        # swaps inside stack
-        vm._reset_stack()
-        vm._push(a)
-        vm._push(b)
-        vm._push(c)
-        vm.decrement_sp()
-        vm.swap()
-        self.assertEqual(vm.stack, [2, 1, 3])
-
-        # Raises if sp < 2
-        vm.decrement_sp()
-        vm.decrement_sp()
-        vm.decrement_sp()
-        self.assertRaises(VMStackException, vm.swap)
-
     def test_dup(self):
         vm = VM()
 
@@ -673,11 +608,8 @@ class TestVM(unittest.TestCase):
         a, b, c = 1, 2, 3
         vm._push(a)
         vm._push(b)
-        vm._push(c)
-        vm.decrement_sp()
         vm.dup()
-        self.assertEqual(vm.stack, [a, b, b, c])
-        self.assertEqual(vm.sp, vm.get_init_sp() + 3)
+        self.assertEqual(vm.stack, [a, b, b])
 
     def test_add(self):
         vm = VM()
@@ -689,11 +621,32 @@ class TestVM(unittest.TestCase):
         vm._push(d)
         vm.add()
         self.assertEqual(vm.stack, [a, b, c + d])
-        vm.decrement_sp()
         vm.add()
-        self.assertEqual(vm.stack, [a + b, c + d])
+        self.assertEqual(vm.stack, [a, b + c + d])
         vm.add()
         self.assertEqual(vm.stack, [a + b + c + d])
+        try:
+            vm.add()
+            assert 0
+        except VMStackException:
+            assert 1
+
+    def test_dip(self):
+        vm = VM()
+
+        a, b, c = 1, 2, 3
+        vm._push(a)
+        vm._push(b)
+        vm._push(c)
+        vm.dip(1, [Instr("ADD", [], {})])
+        self.assertEqual(vm.stack, [a + b, c])
+        vm.dip(0, [Instr("ADD", [], {})])
+        self.assertEqual(vm.stack, [a + b + c])
+        try:
+            vm.dip(10, [Instr("ADD", [], {})])
+            assert 0
+        except VMStackException:
+            assert 1
 
     def test_dig(self):
         vm = VM()
@@ -702,10 +655,12 @@ class TestVM(unittest.TestCase):
         vm._push(a)
         vm._push(b)
         vm._push(c)
-        vm.decrement_sp()
-        vm.decrement_sp()
-        vm.dig()
-        self.assertEqual(vm.stack, [b, c, a])
+        vm.dig(1)  # eq to swap
+        self.assertEqual(vm.stack, [a, c, b])
+        vm.dig(0)  # eq to no op
+        self.assertEqual(vm.stack, [a, c, b])
+        vm.dig(2)
+        self.assertEqual(vm.stack, [c, b, a])
 
     def test_append_before_list(self):
         vm = VM()
@@ -717,6 +672,11 @@ class TestVM(unittest.TestCase):
         vm._push(b)
         vm.append_before_list()
         self.assertEqual(vm.stack[0].els, [b, a])
+
+
+for TestSuite in [TestContract, TestVM]:
+    suite = unittest.defaultTestLoader.loadTestsFromTestCase(TestSuite)
+    unittest.TextTestRunner().run(suite)
 
 
 if __name__ == "__main__":
