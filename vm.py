@@ -69,6 +69,7 @@ class VM:
             "CDR": self.cdr,
             "DIP": self.dip,
             "DIG": self.dig,
+            "DUG": self.dug,
             "DROP": self.pop,
             "DUP": self.dup,
             "IIP": self.increment_sp,
@@ -292,6 +293,13 @@ class VM:
         el_to_dig = self.stack[reverse_index]
         del self.stack[reverse_index]
         self.stack.append(el_to_dig)
+
+    @debug
+    def dug(self, jump=None):
+        self._assert_min_stack_length(jump + 1)
+        self.stack.insert(len(self.stack) - 1 - jump, self.stack[-1])
+        del self.stack[-1]
+
 
 class TestContract(unittest.TestCase):
     def test_run_contract(self):
@@ -661,6 +669,20 @@ class TestVM(unittest.TestCase):
         self.assertEqual(vm.stack, [a, c, b])
         vm.dig(2)
         self.assertEqual(vm.stack, [c, b, a])
+
+    def test_dug(self):
+        vm = VM()
+
+        a, b, c = 1, 2, 3
+        vm._push(a)
+        vm._push(b)
+        vm._push(c)
+        vm.dug(1)  # eq to swap
+        self.assertEqual(vm.stack, [a, c, b])
+        vm.dug(0)  # eq to no op
+        self.assertEqual(vm.stack, [a, c, b])
+        vm.dug(2)
+        self.assertEqual(vm.stack, [b, a, c])
 
     def test_append_before_list(self):
         vm = VM()
