@@ -6,7 +6,7 @@ from typing import List, Optional
 import instr_types as t
 from helpers import ast_to_tree
 from vm import VM
-from vm_types import Array, Contract, Env, FunctionPrototype, Instr
+from vm_types import Array, Contract, Env, FunctionPrototype, Instr, Entrypoint
 
 
 def debug(cb):
@@ -29,6 +29,12 @@ class Compiler:
         self.ast = ast.parse(src)
         self.isDebug = isDebug
         self.type_parser = t.TypeParser()
+        self.contract = Contract(
+            storage_type=t.Int(),
+            storage=0,
+            entrypoints={},
+            instructions=[],
+        )
 
     def print_ast(self):
         print(pprint.pformat(ast_to_tree(self.ast)))
@@ -249,6 +255,47 @@ class Compiler:
     def get_init_env(self):
         return Env({}, -1, {})
 
+    @debug
+    def compile_entrypoint(self, f: ast.FunctionDef, e: Env) -> List[Instr]:
+        prototype = self._get_function_prototype(f)
+
+        # Save the storage and entrypoint argument on the stack
+        if not self.contract.instructions:
+            self.contract.instructions = [
+                Instr("DUP", [], {}),   # [Pair(param, storage), Pair(param, storage)]
+                Instr("CDR", [], {}),   # [Pair(param, storage), storage]
+                Instr("DUG", [1], {}),  # [storage, Pair(param, storage)]
+                Instr("CAR", [], {}),   # [storage, param]
+            ]
+        e.sp = 1  # update stack pointer
+        e.vars["storage"] = 0
+        e.vars[f.args.args[0].arg] = 1
+
+        free_argument_instructions = [
+            Comment(f"Freeing argument at sp={e.vars[f.args.args[0].arg]}"),
+            Instr("DIP", [1,
+                [Instr("DROP", [], {})]
+            ], {}),
+        ]
+        free_storage_instructions = [
+            Comment("Freeing storage at e.sp=" + str(e.vars["storage"])),
+            Instr("DIP", [1,
+                [Instr("DROP", [], {})]
+            ], {}),
+        ]
+
+        entrypoint_instructions = self.compile(f, e)[-1].args[2] + free_argument_instructions + free_storage_instructions
+        entrypoint = Entrypoint(prototype, entrypoint_instructions)
+        self.contract.add_entrypoint(f.name, entrypoint)
+        return []
+
+    @debug
+    def compile_contract(self, contract_ast: ast.ClassDef, e: Env) -> List[Instr]:
+        instructions = []
+        for entrypoint in contract_ast.body:
+            instructions += self.compile_entrypoint(entrypoint, e)
+        return instructions
+
     def compile(self, node_ast, e: Optional[Env] = None) -> List[Instr]:
         e = self.get_init_env() if not e else e
         self.env = e  # saving as attribute for debug purposes
@@ -278,6 +325,11 @@ class Compiler:
             instructions += self.compile_return(node_ast, e)
         elif type(node_ast) == ast.Call:
             instructions += self.compile_fcall(node_ast, e)
+        elif type(node_ast) == ast.ClassDef:
+            if node_ast.name == "Contract":
+                instructions += self.compile_contract(node_ast, e)
+            else:
+                raise NotImplementedError
         else:
             import ipdb
 
@@ -292,6 +344,30 @@ class Compiler:
     @staticmethod
     def print_instructions(instructions):
         print("\n".join([f"{i.name} {i.args} {i.kwargs}" for i in instructions]))
+
+
+class TestContract(unittest.TestCase):
+    def test_multi_entrypoint_contract(self):
+        vm = VM(isDebug=False)
+        source = """
+class Contract:
+    def incrementByTwo(a: int) -> int:
+        b = 1
+        return a + b + 1
+
+    def bar(b: int) -> int:
+        return b
+        """
+        c = Compiler(source, isDebug=False)
+        c.compile(c.ast)
+        vm.run_contract(c.contract, "incrementByTwo", 10)
+        self.assertEqual(c.contract.storage, 12)
+        self.assertEqual(vm.stack, [])
+
+        c.compile(c.ast)
+        vm.run_contract(c.contract, "bar", 10)
+        self.assertEqual(c.contract.storage, 10)
+        self.assertEqual(vm.stack, [])
 
 
 class TestCompilerUnit(unittest.TestCase):

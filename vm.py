@@ -96,7 +96,7 @@ class VM:
         body_instructions = [contract.get_contract_body()]
         self._push(Pair(car=contract_param, cdr=contract.storage))
         self._run_instructions(contract.instructions + body_instructions)
-        contract.storage = self.stack[-1]
+        contract.storage = self.pop()
 
     def _run_instructions(self, instructions: List[Instr]) -> None:
         for instr in instructions:
@@ -345,7 +345,7 @@ class TestContract(unittest.TestCase):
         vm = VM()
         vm.run_contract(contract, "add", 10)
         self.assertEqual(contract.storage, 11)
-        self.assertEqual(vm.stack, [11])
+        self.assertEqual(vm.stack, [])
 
     def test_contract(self):
         contract = Contract(
