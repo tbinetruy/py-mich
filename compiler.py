@@ -78,10 +78,10 @@ class Compiler:
                 )
             ]
             instructions = [
-                Instr("DIP", [jump_length], {}),
-                Instr("DUP", [], {}),
                 Instr("DIG", [jump_length], {}),
-                # Instr('IIP', [], {}),
+                Instr("DUP", [], {}),
+                Instr("SWAP", [], {}),
+                Instr("DUG", [jump_length + 1], {}),
             ]
             e.sp += 1  # Account for DUP
             return comment + instructions
@@ -129,24 +129,28 @@ class Compiler:
     def free_var(self, var_name, e: Env):
         var_location = e.vars[var_name]
         jump = e.sp - var_location
-        e.sp -= jump  # DIP
+        e.sp -= 1  # account for freeing var
 
         # If the stack pointer is at 0, then don't increment it
         # see VM.pop that has particular behavior when it results
         # in empty stack
-        if e.sp:
-            epilogue = [Instr("IIP", [jump], {})]
-        else:
-            epilogue = []
+        #if e.sp:
+        #    epilogue = [Instr("IIP", [jump], {})]
+        #else:
+        #    epilogue = []
 
         comment = [Comment(f"Freeing var {var_name} at {var_location}")]
         return (
             comment
             + [
-                Instr("DIP", [jump], {}),
-                Instr("DROP", [], {}),
-            ]
-            + epilogue,
+                Instr("DIP", [
+                    jump,
+                    [
+                        Instr("DROP", [], {}),
+                    ]
+                ], {}),
+            ],
+            #+ epilogue,
             e,
         )
 
@@ -222,24 +226,40 @@ class Compiler:
         comment = [
             Comment(f"Moving to function {f.func.id} at {func_addr}, e.sp = {e.sp}")
         ]
-        prologue_instr = comment + [
-            Instr("DIP", [jump_length], {}),
+        # prologue_instr = comment + [
+        #     Instr("DIP", [jump_length], {}),
+        # ]
+        # tmp_env.sp -= jump_length  # Account for DIP
+
+        load_function = [
+            Instr("DIG", [jump_length], {}),
+            Instr("DUP", [], {}),
+            Instr("DUG", [jump_length + 1], {})
         ]
-        tmp_env.sp -= jump_length  # Account for DIP
+
+        tmp_env.sp += 1  # Account for DUP
 
         # fetch arg name for function
         arg_name = tmp_env.args[f.func.id]
+        load_arg = self.compile(f.args[0], tmp_env)
 
-        # compile arg
-        arg = self.compile(f.args[0], tmp_env)
+        tmp_env.sp += 1  # Account for pushing argument
+
+        execute_function = [Instr("EXEC", [], {})]
+
+        tmp_env.sp -= 2  # Account popping EXEC and LAMBDA
+
+        instr = comment + load_function + load_arg + execute_function
 
         # Store arg stack location
-        tmp_env.vars[arg_name] = tmp_env.sp
+        # tmp_env.vars[arg_name] = tmp_env.sp
 
-        tmp_env.sp += jump_length  # Account for DIG
+        # tmp_env.sp += jump_length  # Account for DIG
 
         # We pass back the new stack pointer
         e.sp = tmp_env.sp
+
+        return instr
 
         comment = [Comment(f"Executing function {f.func.id} at {func_addr}")]
         return (
@@ -312,7 +332,6 @@ class TestCompilerUnit(unittest.TestCase):
         instructions = c.compile(c.ast)
         vm._run_instructions(instructions)
         self.assertEqual(vm.stack[0].els, [])
-        self.assertEqual(vm.sp, 0)
 
     def test_print_ast(self):
         pass
@@ -328,7 +347,6 @@ class TestCompilerList(unittest.TestCase):
         instructions = c.compile(c.ast)
         vm._run_instructions(instructions)
         self.assertEqual(vm.stack, [Array([1, 2, 3])])
-        self.assertEqual(vm.sp, 0)
 
 
 class TestCompilerAssign(unittest.TestCase):
@@ -346,7 +364,6 @@ a = b
         #       and c.env.vars['a'] == 0 even
         #       after reassign
         self.assertEqual(vm.stack, [1, 2, 2])
-        self.assertEqual(vm.sp, 2)
         self.assertEqual(c.env.vars["a"], 2)
         self.assertEqual(c.env.vars["b"], 1)
 
@@ -397,7 +414,6 @@ a + b + c
         instructions = c.compile(c.ast)
         vm._run_instructions(instructions)
         self.assertEqual(vm.stack, [1, 2, 5, 8])
-        self.assertEqual(vm.sp, 3)
 
 
 if __name__ == "__main__":
