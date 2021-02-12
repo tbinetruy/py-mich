@@ -131,14 +131,6 @@ class Compiler:
         jump = e.sp - var_location
         e.sp -= 1  # account for freeing var
 
-        # If the stack pointer is at 0, then don't increment it
-        # see VM.pop that has particular behavior when it results
-        # in empty stack
-        #if e.sp:
-        #    epilogue = [Instr("IIP", [jump], {})]
-        #else:
-        #    epilogue = []
-
         comment = [Comment(f"Freeing var {var_name} at {var_location}")]
         return (
             comment
@@ -150,7 +142,6 @@ class Compiler:
                     ]
                 ], {}),
             ],
-            #+ epilogue,
             e,
         )
 
@@ -226,10 +217,6 @@ class Compiler:
         comment = [
             Comment(f"Moving to function {f.func.id} at {func_addr}, e.sp = {e.sp}")
         ]
-        # prologue_instr = comment + [
-        #     Instr("DIP", [jump_length], {}),
-        # ]
-        # tmp_env.sp -= jump_length  # Account for DIP
 
         load_function = [
             Instr("DIG", [jump_length], {}),
@@ -240,7 +227,6 @@ class Compiler:
         tmp_env.sp += 1  # Account for DUP
 
         # fetch arg name for function
-        arg_name = tmp_env.args[f.func.id]
         load_arg = self.compile(f.args[0], tmp_env)
 
         tmp_env.sp += 1  # Account for pushing argument
@@ -251,26 +237,10 @@ class Compiler:
 
         instr = comment + load_function + load_arg + execute_function
 
-        # Store arg stack location
-        # tmp_env.vars[arg_name] = tmp_env.sp
-
-        # tmp_env.sp += jump_length  # Account for DIG
-
         # We pass back the new stack pointer
         e.sp = tmp_env.sp
 
         return instr
-
-        comment = [Comment(f"Executing function {f.func.id} at {func_addr}")]
-        return (
-            prologue_instr
-            + arg
-            + comment
-            + [
-                Instr("EXEC", [], {}),
-                Instr("DIG", [jump_length], {}),
-            ]
-        )
 
     @debug
     def compile_return(self, r: ast.FunctionDef, e: Env):
