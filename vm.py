@@ -289,6 +289,7 @@ class VM:
 
     @debug
     def dig(self, jump=None):
+        self._assert_min_stack_length(jump + 1)
         reverse_index = - jump - 1
         el_to_dig = self.stack[reverse_index]
         del self.stack[reverse_index]
