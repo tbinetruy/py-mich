@@ -54,7 +54,7 @@ class CompilerBackend:
             return {"prim": "PAIR"}
         elif instruction.name == "PUSH":
             type_name = {"prim": str(instruction.args[0])}
-            pushed_literal = {"prim": "int" if type(instruction.args[1]) else "string"}
+            pushed_literal = {str(instruction.args[0]): str(instruction.args[1])}
             return {"prim": "PUSH", "args": [type_name, pushed_literal]}
         elif instruction.name == "SWAP":
             return {"prim": "SWAP"}
