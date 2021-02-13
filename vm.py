@@ -72,7 +72,6 @@ class VM:
             "DUG": self.dug,
             "DROP": self.pop,
             "DUP": self.dup,
-            "IIP": self.increment_sp,
             "LIST": self.make_list,
             "PAIR": self.make_pair,
             "PUSH": self.push,
