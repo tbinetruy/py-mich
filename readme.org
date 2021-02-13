@@ -430,6 +430,7 @@ Compile contract:
 
 #+begin_src python
 from compiler import Compiler
+import json
 
 source = """
 class Contract:
@@ -440,13 +441,8 @@ class Contract:
     def bar(b: int) -> int:
         return b
 """
-c = Compiler(source, isDebug=False)
-c.compile(c.ast)
-b = CompilerBackend()
-
-micheline = b.compile_contract(c.contract)
-
-import json
+contract = Compiler(source).compile().contract
+micheline = CompilerBackend().compile_contract(contract)
 
 with open("my_contract.json", "w+") as f:
     f.write(json.dumps(micheline))

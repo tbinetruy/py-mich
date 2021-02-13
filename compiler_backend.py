@@ -146,7 +146,7 @@ class Contract:
         return b
 """
 c = Compiler(source, isDebug=False)
-c.compile(c.ast)
+c.compile()
 b = CompilerBackend()
 
 micheline = b.compile_contract(c.contract)

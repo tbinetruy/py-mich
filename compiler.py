@@ -44,7 +44,7 @@ class Compiler:
         for key, value in ast.iter_fields(m):
             if key == "body":
                 for childNode in value:
-                    instructions += self.compile(childNode, e)
+                    instructions += self._compile(childNode, e)
 
         return instructions
 
@@ -53,7 +53,7 @@ class Compiler:
         instructions: List[Instr] = []
         var_name = assign.targets[0]
         value = assign.value
-        instructions = self.compile(var_name, e) + self.compile(value, e)
+        instructions = self._compile(var_name, e) + self._compile(value, e)
         e.vars[var_name.id] = e.sp
         try:
             print_val = value.value
@@ -63,7 +63,7 @@ class Compiler:
 
     @debug
     def compile_expr(self, expr: ast.Expr, e: Env) -> List[Instr]:
-        return self.compile(expr.value, e)
+        return self._compile(expr.value, e)
 
     @debug
     def compile_num(self, num: ast.Constant, e: Env) -> List[Instr]:
@@ -99,9 +99,9 @@ class Compiler:
 
     @debug
     def compile_binop(self, t: ast.BinOp, e: Env) -> List[Instr]:
-        left = self.compile(t.left, e)
-        right = self.compile(t.right, e)
-        op = self.compile(t.op, e)
+        left = self._compile(t.left, e)
+        right = self._compile(t.right, e)
+        op = self._compile(t.op, e)
         return left + right + op
 
     @debug
@@ -121,7 +121,7 @@ class Compiler:
     @debug
     def append_before_list_el(self, el, e) -> List[Instr]:
         # no sp chage b/c they cancel out btwn the two instructions
-        return self.compile(el, e) + [Instr("CONS", [], {})]
+        return self._compile(el, e) + [Instr("CONS", [], {})]
 
     @debug
     def compile_list(self, l: ast.List, e: Env) -> List[Instr]:
@@ -182,7 +182,7 @@ class Compiler:
         # iterate body instructions
         body_instructions = []
         for i in f.body:
-            body_instructions += self.compile(i, func_env)
+            body_instructions += self._compile(i, func_env)
 
         # get new func_env keys
         new_var_names = set(func_env.vars.keys())
@@ -236,7 +236,7 @@ class Compiler:
         tmp_env.sp += 1  # Account for DUP
 
         # fetch arg name for function
-        load_arg = self.compile(f.args[0], tmp_env)
+        load_arg = self._compile(f.args[0], tmp_env)
 
         tmp_env.sp += 1  # Account for pushing argument
 
@@ -253,7 +253,7 @@ class Compiler:
 
     @debug
     def compile_return(self, r: ast.FunctionDef, e: Env):
-        return self.compile(r.value, e)
+        return self._compile(r.value, e)
 
     def get_init_env(self):
         return Env({}, -1, {})
@@ -288,7 +288,7 @@ class Compiler:
         ]
 
         entrypoint_instructions = (
-            self.compile(f, e)[-1].args[2]
+            self._compile(f, e)[-1].args[2]
             + free_argument_instructions
             + free_storage_instructions
             + epilogue
@@ -304,7 +304,11 @@ class Compiler:
             instructions += self.compile_entrypoint(entrypoint, e)
         return instructions
 
-    def compile(self, node_ast, e: Optional[Env] = None) -> List[Instr]:
+    def compile(self):
+        self._compile(self.ast)
+        return self
+
+    def _compile(self, node_ast, e: Optional[Env] = None) -> List[Instr]:
         e = self.get_init_env() if not e else e
         self.env = e  # saving as attribute for debug purposes
         instructions: List[Instr] = []
@@ -364,12 +368,12 @@ class Contract:
         return b
         """
         c = Compiler(source, isDebug=False)
-        c.compile(c.ast)
+        c._compile(c.ast)
         vm.run_contract(c.contract, "incrementByTwo", 10)
         self.assertEqual(c.contract.storage, 12)
         self.assertEqual(vm.stack, [])
 
-        c.compile(c.ast)
+        c._compile(c.ast)
         vm.run_contract(c.contract, "bar", 10)
         self.assertEqual(c.contract.storage, 10)
         self.assertEqual(vm.stack, [])
@@ -380,7 +384,7 @@ class TestCompilerUnit(unittest.TestCase):
         vm = VM(isDebug=False)
         source = "[]"
         c = Compiler(source, isDebug=False)
-        instructions = c.compile(c.ast)
+        instructions = c._compile(c.ast)
         vm._run_instructions(instructions)
         self.assertEqual(vm.stack[0].els, [])
 
@@ -395,7 +399,7 @@ class TestCompilerList(unittest.TestCase):
 [1, 2, 3]
         """
         c = Compiler(source, isDebug=False)
-        instructions = c.compile(c.ast)
+        instructions = c._compile(c.ast)
         vm._run_instructions(instructions)
         self.assertEqual(vm.stack, [Array([1, 2, 3])])
 
@@ -409,7 +413,7 @@ b = 2
 a = b
         """
         c = Compiler(source, isDebug=False)
-        instructions = c.compile(c.ast)
+        instructions = c._compile(c.ast)
         vm._run_instructions(instructions)
         # TODO: make vm.stack == [1, 2]
         #       and c.env.vars['a'] == 0 even
@@ -431,7 +435,7 @@ fff = foo(bar)
 foo(foo(bar))
 """
         c = Compiler(source, isDebug=False)
-        instructions = c.compile(c.ast)
+        instructions = c._compile(c.ast)
         vm._run_instructions(instructions)
         self.assertEqual(vm.stack[-1], 16)
         self.assertEqual(instructions[3].args[0], t.Int())
@@ -446,7 +450,7 @@ def add(a, b):
 foo(1, 2)
 """
         c = Compiler(source, isDebug=False)
-        instructions = c.compile(c.ast)
+        instructions = c._compile(c.ast)
         vm._run_instructions(instructions)
         self.assertEqual(vm.stack[-1], 16)
         self.assertEqual(len(vm.stack), 5)
@@ -462,10 +466,24 @@ c = a + b + b
 a + b + c
         """
         c = Compiler(source, isDebug=False)
-        instructions = c.compile(c.ast)
+        instructions = c._compile(c.ast)
         vm._run_instructions(instructions)
         self.assertEqual(vm.stack, [1, 2, 5, 8])
 
 
+for TestSuite in [
+    TestContract,
+    TestCompilerUnit,
+    TestCompilerList,
+    TestCompilerAssign,
+    TestCompilerDefun,
+    TestCompilerIntegration,
+]:
+    suite = unittest.defaultTestLoader.loadTestsFromTestCase(TestSuite)
+    unittest.TextTestRunner().run(suite)
+
 if __name__ == "__main__":
     unittest.main()
+
+
+
