@@ -6,7 +6,7 @@ from typing import List, Optional
 import instr_types as t
 from helpers import ast_to_tree
 from vm import VM
-from vm_types import Array, Contract, Env, FunctionPrototype, Instr, Entrypoint
+from vm_types import Array, Contract, Entrypoint, Env, FunctionPrototype, Instr
 
 
 def debug(cb):
@@ -115,7 +115,7 @@ class Compiler:
     def create_list(self, e: Env) -> List[Instr]:
         e.sp += 1  # Account for pushing list
         return [
-            Instr("LIST", [], {}),
+            Instr("NIL", [t.Int()], {}),
         ]
 
     @debug
@@ -140,12 +140,16 @@ class Compiler:
         return (
             comment
             + [
-                Instr("DIP", [
-                    jump,
+                Instr(
+                    "DIP",
                     [
-                        Instr("DROP", [], {}),
-                    ]
-                ], {}),
+                        jump,
+                        [
+                            Instr("DROP", [], {}),
+                        ],
+                    ],
+                    {},
+                ),
             ],
             e,
         )
@@ -226,7 +230,7 @@ class Compiler:
         load_function = [
             Instr("DIG", [jump_length], {}),
             Instr("DUP", [], {}),
-            Instr("DUG", [jump_length + 1], {})
+            Instr("DUG", [jump_length + 1], {}),
         ]
 
         tmp_env.sp += 1  # Account for DUP
@@ -261,10 +265,10 @@ class Compiler:
         # Save the storage and entrypoint argument on the stack
         if not self.contract.instructions:
             self.contract.instructions = [
-                Instr("DUP", [], {}),   # [Pair(param, storage), Pair(param, storage)]
-                Instr("CDR", [], {}),   # [Pair(param, storage), storage]
+                Instr("DUP", [], {}),  # [Pair(param, storage), Pair(param, storage)]
+                Instr("CDR", [], {}),  # [Pair(param, storage), storage]
                 Instr("DUG", [1], {}),  # [storage, Pair(param, storage)]
-                Instr("CAR", [], {}),   # [storage, param]
+                Instr("CAR", [], {}),  # [storage, param]
             ]
         e.sp = 1  # update stack pointer
         e.vars["storage"] = 0
@@ -272,18 +276,23 @@ class Compiler:
 
         free_argument_instructions = [
             Comment(f"Freeing argument at sp={e.vars[f.args.args[0].arg]}"),
-            Instr("DIP", [1,
-                [Instr("DROP", [], {})]
-            ], {}),
+            Instr("DIP", [1, [Instr("DROP", [], {})]], {}),
         ]
         free_storage_instructions = [
             Comment("Freeing storage at e.sp=" + str(e.vars["storage"])),
-            Instr("DIP", [1,
-                [Instr("DROP", [], {})]
-            ], {}),
+            Instr("DIP", [1, [Instr("DROP", [], {})]], {}),
+        ]
+        epilogue = [
+            Instr("NIL", [t.Operation()], {}),
+            Instr("PAIR", [], {}),
         ]
 
-        entrypoint_instructions = self.compile(f, e)[-1].args[2] + free_argument_instructions + free_storage_instructions
+        entrypoint_instructions = (
+            self.compile(f, e)[-1].args[2]
+            + free_argument_instructions
+            + free_storage_instructions
+            + epilogue
+        )
         entrypoint = Entrypoint(prototype, entrypoint_instructions)
         self.contract.add_entrypoint(f.name, entrypoint)
         return []
@@ -330,10 +339,7 @@ class Compiler:
             else:
                 raise NotImplementedError
         else:
-            import ipdb
-
-            ipdb.set_trace()
-            return NotImplementedError
+            raise NotImplementedError
 
         if self.isDebug:
             print(e)

@@ -206,6 +206,9 @@ class Contract:
         entrypoint_index = entrypoint_names.index(entrypoint_name)
         return navigate_to_tree_leaf(tree, entrypoint_index + 1, entrypoint_param)
 
+    def get_storage_type(self):
+        return self.storage_type
+
     def get_parameter_type(self):
         entrypoint_names = self.entrypoints.keys()
         if len(entrypoint_names) == 1:

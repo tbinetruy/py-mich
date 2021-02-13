@@ -34,18 +34,20 @@ class CompilerBackend:
             return {
                 "prim": "DIP",
                 "args": [
-                    {"int": instruction.args[0]},
+                    {"int": str(instruction.args[0])},
                     self.compile_instructions(instruction.args[1]),
                 ],
             }
         elif instruction.name == "DIG":
-            return {"prim": "DIG", "args": [{"int": instruction.args[0]}]}
+            return {"prim": "DIG", "args": [{"int": str(instruction.args[0])}]}
         elif instruction.name == "DUG":
-            return {"prim": "DUG", "args": [{"int": instruction.args[0]}]}
+            return {"prim": "DUG", "args": [{"int": str(instruction.args[0])}]}
         elif instruction.name == "DROP":
             return {"prim": "DROP"}
         elif instruction.name == "DUP":
             return {"prim": "DUP"}
+        elif instruction.name == "NIL":
+            return {"prim": "NIL", "args": [{"prim": str(instruction.args[0])}]}
         elif instruction.name == "LIST":
             return NotImplementedError
         elif instruction.name == "PAIR":
@@ -98,7 +100,7 @@ class CompilerBackend:
             },
             {
                 "prim": "storage",
-                "args": [parameter_type],
+                "args": [storage_type],
             },
             {
                 "prim": "code",
@@ -148,3 +150,8 @@ c.compile(c.ast)
 b = CompilerBackend()
 
 micheline = b.compile_contract(c.contract)
+
+import json
+
+with open("my_contract.json", "w+") as f:
+    f.write(json.dumps(micheline))

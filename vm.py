@@ -2,7 +2,7 @@ import copy
 import unittest
 from typing import Any, Callable, Dict, List, Tuple
 
-from instr_types import Int
+import instr_types as t
 from vm_types import (Array, Contract, Entrypoint, FunctionPrototype, Instr,
                       Left, Or, Pair, Right)
 
@@ -72,7 +72,7 @@ class VM:
             "DUG": self.dug,
             "DROP": self.pop,
             "DUP": self.dup,
-            "LIST": self.make_list,
+            "NIL": self.nil,
             "PAIR": self.make_pair,
             "PUSH": self.push,
             "SWAP": self.swap,
@@ -95,7 +95,7 @@ class VM:
         body_instructions = [contract.get_contract_body()]
         self._push(Pair(car=contract_param, cdr=contract.storage))
         self._run_instructions(contract.instructions + body_instructions)
-        contract.storage = self.pop()
+        contract.storage = self.pop().cdr
 
     def _run_instructions(self, instructions: List[Instr]) -> None:
         for instr in instructions:
@@ -210,11 +210,13 @@ class VM:
         self._push(pair.cdr)
 
     @debug
-    def make_pair(self, car: Any, cdr: Any):
+    def make_pair(self):
+        car = self.pop()
+        cdr = self.pop()
         self._push(Pair(car, cdr))
 
     @debug
-    def make_list(self):
+    def nil(self, element_type):
         self._push(Array([]))
 
     @debug
@@ -305,28 +307,30 @@ class TestContract(unittest.TestCase):
     def test_run_contract(self):
         contract = Contract(
             storage=10,
-            storage_type=Int(),
+            storage_type=t.Int(),
             entrypoints={
                 "add": Entrypoint(
-                    FunctionPrototype(Int(), Int()),
+                    FunctionPrototype(t.Int(), t.Int()),
                     [
-                        Instr("PUSH", [Int(), 1], {}),
+                        Instr("PUSH", [t.Int(), 1], {}),
                         Instr("ADD", [], {}),
                         Instr("DIP", [1, [Instr("DROP", [], {})]], {}),
+                        Instr("NIL", [t.Int()], {}),
+                        Instr("PAIR", [], {}),
                     ],
                 ),
                 "sub": Entrypoint(
-                    FunctionPrototype(Int(), Int()),
+                    FunctionPrototype(t.Int(), t.Int()),
                     [
-                        Instr("PUSH", [Int(), 2], {}),
+                        Instr("PUSH", [t.Int(), 2], {}),
                         Instr("ADD", [], {}),
                         Instr("DIP", [1, [Instr("DROP", [], {})]], {}),
                     ],
                 ),
                 "div": Entrypoint(
-                    FunctionPrototype(Int(), Int()),
+                    FunctionPrototype(t.Int(), t.Int()),
                     [
-                        Instr("PUSH", [Int(), 3], {}),
+                        Instr("PUSH", [t.Int(), 3], {}),
                         Instr("ADD", [], {}),
                         Instr("DIP", [1, [Instr("DROP", [], {})]], {}),
                     ],
@@ -349,26 +353,26 @@ class TestContract(unittest.TestCase):
     def test_contract(self):
         contract = Contract(
             storage=10,
-            storage_type=Int(),
+            storage_type=t.Int(),
             entrypoints={
                 "add": Entrypoint(
-                    FunctionPrototype(Int(), Int()),
+                    FunctionPrototype(t.Int(), t.Int()),
                     [
-                        Instr("PUSH", [Int(), 1], {}),
+                        Instr("PUSH", [t.Int(), 1], {}),
                         Instr("ADD", [], {}),
                     ],
                 ),
                 "sub": Entrypoint(
-                    FunctionPrototype(Int(), Int()),
+                    FunctionPrototype(t.Int(), t.Int()),
                     [
-                        Instr("PUSH", [Int(), 2], {}),
+                        Instr("PUSH", [t.Int(), 2], {}),
                         Instr("ADD", [], {}),
                     ],
                 ),
                 "div": Entrypoint(
-                    FunctionPrototype(Int(), Int()),
+                    FunctionPrototype(t.Int(), t.Int()),
                     [
-                        Instr("PUSH", [Int(), 3], {}),
+                        Instr("PUSH", [t.Int(), 3], {}),
                         Instr("ADD", [], {}),
                     ],
                 ),
@@ -400,16 +404,16 @@ class TestVM(unittest.TestCase):
     def test_if_left(self):
         vm = VM()
         instructions = [
-            Instr("PUSH", [Int(), Left(10)], {}),
+            Instr("PUSH", [t.Int(), Left(10)], {}),
             Instr(
                 "IF_LEFT",
                 [
                     [
-                        Instr("PUSH", [Int(), 10], {}),
+                        Instr("PUSH", [t.Int(), 10], {}),
                         Instr("ADD", [], {}),
                     ],
                     [
-                        Instr("PUSH", [Int(), 20], {}),
+                        Instr("PUSH", [t.Int(), 20], {}),
                         Instr("ADD", [], {}),
                     ],
                 ],
@@ -422,16 +426,16 @@ class TestVM(unittest.TestCase):
     def test_if_not_left(self):
         vm = VM()
         instructions = [
-            Instr("PUSH", [Int(), Right(10)], {}),
+            Instr("PUSH", [t.Int(), Right(10)], {}),
             Instr(
                 "IF_LEFT",
                 [
                     [
-                        Instr("PUSH", [Int(), 10], {}),
+                        Instr("PUSH", [t.Int(), 10], {}),
                         Instr("ADD", [], {}),
                     ],
                     [
-                        Instr("PUSH", [Int(), 20], {}),
+                        Instr("PUSH", [t.Int(), 20], {}),
                         Instr("ADD", [], {}),
                     ],
                 ],
@@ -444,7 +448,7 @@ class TestVM(unittest.TestCase):
     def test_if_left_stack_top_type(self):
         vm = VM()
         instructions = [
-            Instr("PUSH", [Int(), 10], {}),
+            Instr("PUSH", [t.Int(), 10], {}),
             Instr(
                 "IF_LEFT",
                 [[], []],
@@ -460,16 +464,16 @@ class TestVM(unittest.TestCase):
     def test_store_lambda(self):
         vm = VM()
         body = [
-            Instr("PUSH", [Int, 2], {}),
+            Instr("PUSH", [t.Int(), 2], {}),
             Instr("ADD", [], {}),
         ]
         arg = 2
-        arg_types = ([Int],)
-        return_type = Int
+        arg_types = ([t.Int],)
+        return_type = t.Int
         vm._run_instructions(
             [
                 Instr("LAMBDA", [arg_types, return_type, body], {}),
-                Instr("PUSH", [Int, arg], {}),
+                Instr("PUSH", [t.Int(), arg], {}),
                 Instr("EXEC", [], {}),
             ]
         )
@@ -490,8 +494,8 @@ class TestVM(unittest.TestCase):
     def test_run_instructions(self):
         vm = VM()
         instructions = [
-            Instr("PUSH", [Int, 1], {}),
-            Instr("PUSH", [Int, 2], {}),
+            Instr("PUSH", [t.Int(), 1], {}),
+            Instr("PUSH", [t.Int(), 2], {}),
             Instr("SWAP", [], {}),
         ]
         vm._run_instructions(instructions)
@@ -503,7 +507,8 @@ class TestVM(unittest.TestCase):
 
         vm._push(1)
         self.assertRaises(VMTypeException, vm._check_pair)
-        vm.make_pair(1, 2)
+        vm._push(2)
+        vm.make_pair()
         try:
             self.assertRaises(VMTypeException, vm._check_pair)
             self.fail("check_pair raised VMTypeException unexpectedly!")
@@ -542,9 +547,9 @@ class TestVM(unittest.TestCase):
         vm = VM()
 
         a, b, c = 1, 2, 3
-        vm.push(Int, a)
-        vm.push(Int, b)
-        vm.push(Int, c)
+        vm.push(t.Int(), a)
+        vm.push(t.Int(), b)
+        vm.push(t.Int(), c)
         # stack grows towards larger addresses
         self.assertEqual(vm.stack, [a, b, c])
 
@@ -564,34 +569,39 @@ class TestVM(unittest.TestCase):
         vm.pop()
         self.assertRaises(VMStackException, vm.pop)
 
-    def test_make_list(self):
+    def test_nil(self):
         vm = VM()
 
-        a, b = 1, 2
-        vm.make_list()
-        self.assertEqual(vm.stack[-1].__class__, Array([]).__class__)
+        vm.nil(t.Operation())
+        self.assertEqual(type(vm.stack[-1]), Array)
 
     def test_make_pair(self):
         vm = VM()
 
         a, b = 1, 2
-        vm.make_pair(a, b)
+        vm._push(b)
+        vm._push(a)
+        vm.make_pair()
         self.assertEqual([Pair(a, b)], vm.stack)
 
     def test_car(self):
         vm = VM()
 
         a, b = 1, 2
-        vm.make_pair(a, b)
+        vm._push(b)
+        vm._push(a)
+        vm.make_pair()
         vm.car()
         self.assertEqual(vm._stack_top(), a)
 
     def test_cdr(self):
         vm = VM()
         a, b = 1, 2
-        vm.make_pair(a, b)
+        vm._push(b)
+        vm._push(a)
+        vm.make_pair()
         vm.cdr()
-        self.assertEqual(vm._stack_top(), b)
+        self.assertEqual(vm.stack, [b])
 
     def test_swap(self):
         vm = VM()
@@ -688,7 +698,7 @@ class TestVM(unittest.TestCase):
         vm = VM()
 
         a, b = 1, 2
-        vm.make_list()
+        vm.nil(t.Int())
         vm._push(a)
         vm.append_before_list()
         vm._push(b)

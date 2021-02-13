@@ -30,6 +30,13 @@ class String(Type):
         return "string"
 
 
+class Operation(Type):
+    def __init__(self):
+        pass
+
+    def __str__(self):
+        return "operation"
+
 
 class List(Type):
     def __init__(self, element_type: Type):
