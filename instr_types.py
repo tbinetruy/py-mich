@@ -18,10 +18,17 @@ class Int(Type):
     def __eq__(self, o):
         return type(self) == type(o)
 
+    def __str__(self):
+        return "int"
+
 
 class String(Type):
     def __init__(self):
         pass
+
+    def __str__(self):
+        return "string"
+
 
 
 class List(Type):
