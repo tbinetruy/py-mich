@@ -422,3 +422,59 @@ foo(foo(bar))
 ("S: [1, '[func]', ('*', 16), 6, 11] ; sp: ", '2')
 ("S: [1, '[func]', 6, 11, ('*', 16)] ; sp: ", '4')
 #+end_example
+
+
+* Deploy on sandbox
+
+Compile contract:
+
+#+begin_src python
+from compiler import Compiler
+
+source = """
+class Contract:
+    def incrementByTwo(a: int) -> int:
+        b = 1
+        return a + b + 1
+
+    def bar(b: int) -> int:
+        return b
+"""
+c = Compiler(source, isDebug=False)
+c.compile(c.ast)
+b = CompilerBackend()
+
+micheline = b.compile_contract(c.contract)
+
+import json
+
+with open("my_contract.json", "w+") as f:
+    f.write(json.dumps(micheline))
+#+end_src
+
+Run contract on tezos sandbox using pytezos:
+
+#+begin_src python
+from pytezos import pytezos
+
+key = pytezos.key.from_encoded_key("edsk3QoqBuvdamxouPhin7swCvkQNgq4jP5KZPbwWNnwdZpSpJiEbq")
+sandbox_url = "http://tz:20000"
+client = pytezos.using(key=key, shell=sandbox_url)
+
+from pytezos import Contract
+
+with open("/nyx/mycontract.json") as f:
+    text = f.read()
+
+import json
+foo = json.loads(text)
+operation = client.origination(dict(code=foo, storage={"int": "1"})).autofill().sign().inject()
+result = client.shell.blocks[-200:].find_operation(operation['hash'])
+contract_id = result['contents'][0]['metadata']['operation_result']['originated_contracts'][0]
+
+assert client.contract(contract_id).storage() == 1
+client.contract(contract_id).entrypoint_0(10).inject()  # bar entrypoint
+assert client.contract(contract_id).storage() == 10
+client.contract(contract_id).entrypoint_1(10).inject()  # incrementByTwo entrypoint
+assert client.contract(contract_id).storage() == 12
+#+end_src
