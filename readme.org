@@ -463,7 +463,7 @@ client = pytezos.using(key=key, shell=sandbox_url)
 
 from pytezos import Contract
 
-with open("/nyx/mycontract.json") as f:
+with open("my_contract.json") as f:
     text = f.read()
 
 import json
