@@ -25,7 +25,7 @@ def Comment(msg: str):
 
 
 class Compiler:
-    def __init__(self, src: str, isDebug=True):
+    def __init__(self, src: str, isDebug=False):
         self.ast = ast.parse(src)
         self.isDebug = isDebug
         self.type_parser = t.TypeParser()
