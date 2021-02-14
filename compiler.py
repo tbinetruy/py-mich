@@ -4,9 +4,10 @@ import unittest
 from typing import List, Optional
 
 import instr_types as t
-from helpers import ast_to_tree
+from helpers import Tree, ast_to_tree
 from vm import VM
-from vm_types import Array, Contract, Entrypoint, Env, FunctionPrototype, Instr
+from vm_types import (Array, Contract, Entrypoint, Env, FunctionPrototype,
+                      Instr, Pair)
 
 
 def debug(cb):
@@ -22,6 +23,70 @@ def debug(cb):
 
 def Comment(msg: str):
     return Instr("COMMENT", [msg], {})
+
+
+class Record(Tree):
+    def make_node(self, left, right):
+        return Pair(car=left, cdr=right)
+
+    def get_left(self, tree_node):
+        return tree_node.car
+
+    def get_right(self, tree_node):
+        return tree_node.cdr
+
+    def set_right(self, tree_node, value):
+        tree_node.cdr = value
+
+    def left_side_tree_height(self, tree, height=0):
+        if type(tree) is not Pair:
+            return height
+        else:
+            return self.left_side_tree_height(self.get_left(tree), height + 1)
+
+    def get_type(self, element_types):
+        return self.list_to_tree(element_types)
+
+    def navigate_to_tree_leaf(self, tree, leaf_number, acc=None):
+        if not acc:
+            acc = []
+
+        if type(tree) is not Pair:
+            return acc
+
+        left_max_leaf_number = 2 ** self.left_side_tree_height(self.get_left(tree))
+        if leaf_number <= left_max_leaf_number:
+            return (
+                acc
+                + [Instr("CAR", [], {})]
+                + self.navigate_to_tree_leaf(self.get_left(tree), leaf_number)
+            )
+        else:
+            return (
+                acc
+                + [Instr("CDR", [], {})]
+                + self.navigate_to_tree_leaf(
+                    self.get_right(tree), leaf_number - left_max_leaf_number
+                )
+            )
+
+    def compile_node(self, node, acc=None):
+        if not acc:
+            acc = []
+        if type(node) == Pair:
+            return (
+                self.compile_node(node.cdr)
+                + self.compile_node(node.car)
+                + [Instr("PAIR", [], {})]
+            )
+        else:
+            return [
+                Instr("PUSH", [t.Int(), node], {}),
+            ]
+
+    def build_record(self, ordered_elements):
+        tree = self.list_to_tree(ordered_elements)
+        return self.compile_node(tree)
 
 
 class Compiler:
@@ -356,6 +421,99 @@ class Compiler:
 
 
 class TestContract(unittest.TestCase):
+    def test_build_get_record_entry(self):
+        tree = Record()
+        array = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+        build_record_instructions = tree.build_record(array)
+        for i in range(1, len(array) + 1):
+            vm = VM()
+            vm._run_instructions(build_record_instructions)
+            get_record_entry = tree.navigate_to_tree_leaf(tree.get_type(array), i)
+            vm._run_instructions(get_record_entry)
+            self.assertEqual(vm.stack, [i])
+
+    def test_build_record(self):
+        tree = Record()
+
+        instructions = tree.build_record([1, 2])
+        expected_instructions = [
+            Instr("PUSH", [t.Int(), 2], {}),
+            Instr("PUSH", [t.Int(), 1], {}),
+            Instr("PAIR", [], {}),
+        ]
+        self.assertEqual(instructions, expected_instructions)
+
+        instructions = tree.build_record([1, 2, 3, 4, 5])
+        expected_instructions = [
+            Instr("PUSH", [t.Int(), 5], {}),
+            Instr("PUSH", [t.Int(), 4], {}),
+            Instr("PUSH", [t.Int(), 3], {}),
+            Instr("PAIR", [], {}),
+            Instr("PUSH", [t.Int(), 2], {}),
+            Instr("PUSH", [t.Int(), 1], {}),
+            Instr("PAIR", [], {}),
+            Instr("PAIR", [], {}),
+            Instr("PAIR", [], {}),
+        ]
+        self.assertEqual(instructions, expected_instructions)
+
+    def test_record_tree(self):
+        tree = Record()
+        record = tree.list_to_tree([1, 2, 3, 4, 5])
+        self.assertEqual(
+            Pair(car=Pair(car=Pair(car=1, cdr=2), cdr=Pair(car=3, cdr=4)), cdr=5),
+            record,
+        )
+        instructions = tree.navigate_to_tree_leaf(record, 1)
+        self.assertEqual(
+            [
+                Instr(name="CAR", args=[], kwargs={}),
+                Instr(name="CAR", args=[], kwargs={}),
+                Instr(name="CAR", args=[], kwargs={}),
+            ],
+            instructions,
+        )
+
+        instructions = tree.navigate_to_tree_leaf(record, 2)
+        self.assertEqual(
+            [
+                Instr(name="CAR", args=[], kwargs={}),
+                Instr(name="CAR", args=[], kwargs={}),
+                Instr(name="CDR", args=[], kwargs={}),
+            ],
+            instructions,
+        )
+
+        instructions = tree.navigate_to_tree_leaf(record, 3)
+        self.assertEqual(
+            [
+                Instr(name="CAR", args=[], kwargs={}),
+                Instr(name="CDR", args=[], kwargs={}),
+                Instr(name="CAR", args=[], kwargs={}),
+            ],
+            instructions,
+        )
+
+        instructions = tree.navigate_to_tree_leaf(record, 4)
+        self.assertEqual(
+            [
+                Instr(name="CAR", args=[], kwargs={}),
+                Instr(name="CDR", args=[], kwargs={}),
+                Instr(name="CDR", args=[], kwargs={}),
+            ],
+            instructions,
+        )
+
+        instructions = tree.navigate_to_tree_leaf(record, 5)
+        self.assertEqual(
+            [
+                Instr(name="CDR", args=[], kwargs={}),
+            ],
+            instructions,
+        )
+
+    def test_compile_record(self):
+        source = """
     def test_multi_entrypoint_contract(self):
         vm = VM(isDebug=False)
         source = """

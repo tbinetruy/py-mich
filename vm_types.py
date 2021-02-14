@@ -97,49 +97,6 @@ class Entrypoint:
     instructions: List[Instr]
 
 
-class RecordTree(Tree):
-    def make_node(self, left, right):
-        return Pair(car=left, cdr=right)
-
-    def get_left(self, tree_node):
-        return tree_node.car
-
-    def get_right(self, tree_node):
-        return tree_node.cdr
-
-    def set_right(self, tree_node, value):
-        tree_node.cdr = value
-
-    def left_side_tree_height(self, tree, height=0):
-        if type(tree) is not Pair:
-            return height
-        else:
-            return self.left_side_tree_height(self.get_left(tree), height + 1)
-
-    def navigate_to_tree_leaf(self, tree, leaf_number, acc=None):
-        if not acc:
-            acc = []
-
-        if type(tree) is not Pair:
-            return acc
-
-        left_max_leaf_number = 2 ** self.left_side_tree_height(self.get_left(tree))
-        if leaf_number <= left_max_leaf_number:
-            return (
-                acc
-                + [Instr("CAR", [], {})]
-                + self.navigate_to_tree_leaf(self.get_left(tree), leaf_number)
-            )
-        else:
-            return (
-                acc
-                + [Instr("CDR", [], {})]
-                + self.navigate_to_tree_leaf(
-                    self.get_right(tree), leaf_number - left_max_leaf_number
-                )
-            )
-
-
 class ParameterTree(Tree):
     def make_node(self, left, right):
         return Or(left, right)
@@ -248,46 +205,6 @@ class Contract:
 
 
 class TestContract(unittest.TestCase):
-    def test_record_tree(self):
-        tree = RecordTree()
-        record = tree.list_to_tree([1, 2, 3, 4, 5])
-        self.assertEqual(
-            Pair(car=Pair(car=Pair(car=1, cdr=2), cdr=Pair(car=3, cdr=4)), cdr=5),
-            record,
-        )
-        instructions = tree.navigate_to_tree_leaf(record, 1)
-        self.assertEqual([
-            Instr(name='CAR', args=[], kwargs={}),
-            Instr(name='CAR', args=[], kwargs={}),
-            Instr(name='CAR', args=[], kwargs={}),
-        ], instructions)
-
-        instructions = tree.navigate_to_tree_leaf(record, 2)
-        self.assertEqual([
-            Instr(name='CAR', args=[], kwargs={}),
-            Instr(name='CAR', args=[], kwargs={}),
-            Instr(name='CDR', args=[], kwargs={}),
-        ], instructions)
-
-        instructions = tree.navigate_to_tree_leaf(record, 3)
-        self.assertEqual([
-            Instr(name='CAR', args=[], kwargs={}),
-            Instr(name='CDR', args=[], kwargs={}),
-            Instr(name='CAR', args=[], kwargs={}),
-        ], instructions)
-
-        instructions = tree.navigate_to_tree_leaf(record, 4)
-        self.assertEqual([
-            Instr(name='CAR', args=[], kwargs={}),
-            Instr(name='CDR', args=[], kwargs={}),
-            Instr(name='CDR', args=[], kwargs={}),
-        ], instructions)
-
-        instructions = tree.navigate_to_tree_leaf(record, 5)
-        self.assertEqual([
-            Instr(name='CDR', args=[], kwargs={}),
-        ], instructions)
-
     def test_get_contract_body(self):
         contract = Contract(
             storage=10,
