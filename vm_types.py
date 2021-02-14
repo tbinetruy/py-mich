@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, NewType, Tuple
 
 import instr_types as t
+from helpers import Tree
 
 
 @dataclass
@@ -96,92 +97,62 @@ class Entrypoint:
     instructions: List[Instr]
 
 
-def list_to_tree(l):
-    ors = []
-    for el in l:
-        if not len(ors):
-            ors.append(Or(left=el, right=None))
-        elif not ors[-1].right:
-            ors[-1].right = el
+class ParameterTree(Tree):
+    def make_node(self, left, right):
+        return Or(left, right)
+
+    def get_left(self, tree_node):
+        return tree_node.left
+
+    def get_right(self, tree_node):
+        return tree_node.right
+
+    def set_right(self, tree_node, value):
+        tree_node.right = value
+
+    def left_side_tree_height(self, tree, height=0):
+        if type(tree) is not Or:
+            return height
         else:
-            ors.append(Or(left=el, right=None))
+            return self.left_side_tree_height(self.get_left(tree), height + 1)
 
-    if not ors[-1].right:
-        ors[-1] = ors[-1].left
+    def navigate_to_tree_leaf(self, tree, leaf_number, param):
+        if type(tree) is not Or:
+            return param
 
-    def construct_tree(ors):
-        new_ors = []
-        i = 0
-        while i < len(ors):
-            try:
-                new_ors.append(Or(left=ors[i], right=ors[i + 1]))
-            except IndexError:
-                new_ors.append(ors[i])
-            i += 2
-        if len(new_ors) == 1:
-            return new_ors[0]
+        left_max_leaf_number = 2 ** self.left_side_tree_height(tree.left)
+        if leaf_number <= left_max_leaf_number:
+            return Left(self.navigate_to_tree_leaf(tree.left, leaf_number, param))
         else:
-            return construct_tree(new_ors)
-
-    return construct_tree(ors)
-
-
-def entrypoints_to_tree(entrypoints: List[Entrypoint]):
-    tree_leaves: List[Instr] = []
-    for entrypoint in entrypoints:
-        if not len(tree_leaves):
-            tree_leaves.append(Instr("IF_LEFT", [entrypoint.instructions, []], {}))
-        elif not tree_leaves[-1].args[1]:
-            tree_leaves[-1].args[1] = entrypoint.instructions
-        else:
-            tree_leaves.append(Instr("IF_LEFT", [entrypoint.instructions, []], {}))
-
-    if not tree_leaves[-1].args[1]:
-        tree_leaves[-1] = tree_leaves[-1].args[0]
-
-    def construct_tree(tree_leaves):
-        tree = []
-        i = 0
-        while i < len(tree_leaves):
-            try:
-                cond_true = (
-                    tree_leaves[i] if type(tree_leaves[i]) == list else [tree_leaves[i]]
+            return Right(
+                self.navigate_to_tree_leaf(
+                    tree.right, leaf_number - left_max_leaf_number, param
                 )
-                cond_false = (
-                    tree_leaves[i + 1]
-                    if type(tree_leaves[i + 1]) == list
-                    else [tree_leaves[i + 1]]
-                )
-                tree.append(Instr("IF_LEFT", [cond_true, cond_false], {}))
-            except IndexError:
-                tree.append(tree_leaves[i])
-            i += 2
-        if len(tree) == 1:
-            return tree[0]
-        else:
-            return construct_tree(tree)
-
-    return construct_tree(tree_leaves)
+            )
 
 
-def left_side_tree_height(tree, height=0):
-    if type(tree) is not Or:
-        return height
-    else:
-        return left_side_tree_height(tree.left, height + 1)
+class EntrypointTree(Tree):
+    def make_node(self, left=None, right=None):
+        if not left:
+            left = []
+        if not right:
+            right = []
+        return Instr("IF_LEFT", [left, right], {})
 
+    def get_left(self, tree_node):
+        return tree_node.args[0]
 
-def navigate_to_tree_leaf(tree, leaf_number, param):
-    if type(tree) is not Or:
-        return param
+    def get_right(self, tree_node):
+        return tree_node.args[1]
 
-    left_max_leaf_number = 2 ** left_side_tree_height(tree.left)
-    if leaf_number <= left_max_leaf_number:
-        return Left(navigate_to_tree_leaf(tree.left, leaf_number, param))
-    else:
-        return Right(
-            navigate_to_tree_leaf(tree.right, leaf_number - left_max_leaf_number, param)
-        )
+    def set_right(self, tree_node, value):
+        tree_node.args[1] = value
+
+    def get_leaf_from_element(self, element):
+        return element.instructions
+
+    def format_leaf(self, leaf):
+        return leaf if type(leaf) == list else [leaf]
 
 
 @dataclass
@@ -202,9 +173,12 @@ class Contract:
         if len(entrypoint_names) == 1:
             return entrypoint_param
 
-        tree = list_to_tree(entrypoint_names)
+        parameter_tree = ParameterTree()
+        tree = parameter_tree.list_to_tree(entrypoint_names)
         entrypoint_index = entrypoint_names.index(entrypoint_name)
-        return navigate_to_tree_leaf(tree, entrypoint_index + 1, entrypoint_param)
+        return parameter_tree.navigate_to_tree_leaf(
+            tree, entrypoint_index + 1, entrypoint_param
+        )
 
     def get_storage_type(self):
         return self.storage_type
@@ -214,7 +188,8 @@ class Contract:
         if len(entrypoint_names) == 1:
             return self.entrypoints[entrypoint_names[0]].arg_type
         else:
-            return list_to_tree(
+            parameter_tree = ParameterTree()
+            return parameter_tree.list_to_tree(
                 [
                     self.entrypoints[name].prototype.arg_type
                     for name in sorted(entrypoint_names)
@@ -225,7 +200,8 @@ class Contract:
         entrypoints = [
             self.entrypoints[name] for name in sorted(self.entrypoints.keys())
         ]
-        return entrypoints_to_tree(entrypoints)
+        entrypoint_tree = EntrypointTree()
+        return entrypoint_tree.list_to_tree(entrypoints)
 
 
 class TestContract(unittest.TestCase):
@@ -259,7 +235,8 @@ class TestContract(unittest.TestCase):
         sorted_entrypoints = [
             contract.entrypoints[name] for name in sorted(contract.entrypoints.keys())
         ]
-        expected_result = entrypoints_to_tree(sorted_entrypoints)
+        entrypoint_tree = EntrypointTree()
+        expected_result = entrypoint_tree.list_to_tree(sorted_entrypoints)
         self.assertEqual(contract_body, expected_result)
 
     def test_entrypoints_to_tree(self):
@@ -291,7 +268,8 @@ class TestContract(unittest.TestCase):
         entrypoints = [
             contract.entrypoints[name] for name in sorted(contract.entrypoints.keys())
         ]
-        contract_body = entrypoints_to_tree(entrypoints)
+        entrypoint_tree = EntrypointTree()
+        contract_body = entrypoint_tree.list_to_tree(entrypoints)
         expected_result = Instr(
             "IF_LEFT",
             [
@@ -313,66 +291,79 @@ class TestContract(unittest.TestCase):
 
     def test_navigate_to_tree_leaf(self):
         entrypoint_list = ["add", "div", "mul", "sub", "modulo"]
-        tree = list_to_tree(entrypoint_list)
+        param_tree = ParameterTree()
+        tree = param_tree.list_to_tree(entrypoint_list)
         entrypoint_param = 111
 
         entrypoint_index = entrypoint_list.index("add")
-        contract_param = navigate_to_tree_leaf(
+        contract_param = param_tree.navigate_to_tree_leaf(
             tree, entrypoint_index + 1, entrypoint_param
         )
         self.assertEqual(contract_param, Left(Left(Left(entrypoint_param))))
 
         entrypoint_index = entrypoint_list.index("div")
-        contract_param = navigate_to_tree_leaf(
+        contract_param = param_tree.navigate_to_tree_leaf(
             tree, entrypoint_index + 1, entrypoint_param
         )
         self.assertEqual(contract_param, Left(Left(Right(entrypoint_param))))
 
         entrypoint_index = entrypoint_list.index("mul")
-        contract_param = navigate_to_tree_leaf(
+        contract_param = param_tree.navigate_to_tree_leaf(
             tree, entrypoint_index + 1, entrypoint_param
         )
         self.assertEqual(contract_param, Left(Right(Left(entrypoint_param))))
 
         entrypoint_index = entrypoint_list.index("sub")
-        contract_param = navigate_to_tree_leaf(
+        contract_param = param_tree.navigate_to_tree_leaf(
             tree, entrypoint_index + 1, entrypoint_param
         )
         self.assertEqual(contract_param, Left(Right(Right(entrypoint_param))))
 
         entrypoint_index = entrypoint_list.index("modulo")
-        contract_param = navigate_to_tree_leaf(
+        contract_param = param_tree.navigate_to_tree_leaf(
             tree, entrypoint_index + 1, entrypoint_param
         )
         self.assertEqual(contract_param, Right(entrypoint_param))
 
     def test_left_side_tree_height(self):
-        self.assertEqual(left_side_tree_height(list_to_tree([1, 2, 3, 4])), 2)
-        self.assertEqual(left_side_tree_height(list_to_tree([1, 2, 3, 4, 5])), 3)
-        self.assertEqual(left_side_tree_height(list_to_tree([1, 2, 3, 4, 5]).left), 2)
+        param_tree = ParameterTree()
+        self.assertEqual(
+            param_tree.left_side_tree_height(param_tree.list_to_tree([1, 2, 3, 4])), 2
+        )
+        self.assertEqual(
+            param_tree.left_side_tree_height(param_tree.list_to_tree([1, 2, 3, 4, 5])),
+            3,
+        )
+        self.assertEqual(
+            param_tree.left_side_tree_height(
+                param_tree.list_to_tree([1, 2, 3, 4, 5]).left
+            ),
+            2,
+        )
 
     def test_list_to_tree(self):
         l = [1, 2]
-        tree = list_to_tree(l)
+        param_tree = ParameterTree()
+        tree = param_tree.list_to_tree(l)
         self.assertEqual(Or(left=1, right=2), tree)
 
         l = [1, 2, 3]
-        tree = list_to_tree(l)
+        tree = param_tree.list_to_tree(l)
         self.assertEqual(Or(left=Or(left=1, right=2), right=3), tree)
 
         l = [1, 2, 3, 4]
-        tree = list_to_tree(l)
+        tree = param_tree.list_to_tree(l)
         self.assertEqual(Or(left=Or(left=1, right=2), right=Or(left=3, right=4)), tree)
 
         l = [1, 2, 3, 4, 5]
-        tree = list_to_tree(l)
+        tree = param_tree.list_to_tree(l)
         self.assertEqual(
             Or(left=Or(left=Or(left=1, right=2), right=Or(left=3, right=4)), right=5),
             tree,
         )
 
         l = [1, 2, 3, 4, 5, 6]
-        tree = list_to_tree(l)
+        tree = param_tree.list_to_tree(l)
         self.assertEqual(
             Or(
                 left=Or(left=Or(left=1, right=2), right=Or(left=3, right=4)),
@@ -382,7 +373,7 @@ class TestContract(unittest.TestCase):
         )
 
         l = [1, 2, 3, 4, 5, 6, 7]
-        tree = list_to_tree(l)
+        tree = param_tree.list_to_tree(l)
         self.assertEqual(
             Or(
                 left=Or(left=Or(left=1, right=2), right=Or(left=3, right=4)),
@@ -392,7 +383,7 @@ class TestContract(unittest.TestCase):
         )
 
         l = [1, 2, 3, 4, 5, 6, 7, 8]
-        tree = list_to_tree(l)
+        tree = param_tree.list_to_tree(l)
         self.assertEqual(
             Or(
                 left=Or(left=Or(left=1, right=2), right=Or(left=3, right=4)),
@@ -402,7 +393,7 @@ class TestContract(unittest.TestCase):
         )
 
         l = [1, 2, 3, 4, 5, 6, 7, 8, 9]
-        tree = list_to_tree(l)
+        tree = param_tree.list_to_tree(l)
         self.assertEqual(
             Or(
                 left=Or(
