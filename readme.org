@@ -467,10 +467,11 @@ foo = json.loads(text)
 operation = client.origination(dict(code=foo, storage={"int": "1"})).autofill().sign().inject()
 result = client.shell.blocks[-200:].find_operation(operation['hash'])
 contract_id = result['contents'][0]['metadata']['operation_result']['originated_contracts'][0]
+contract = client.contract(contract_id)
 
-assert client.contract(contract_id).storage() == 1
-client.contract(contract_id).entrypoint_0(10).inject()  # bar entrypoint
-assert client.contract(contract_id).storage() == 10
-client.contract(contract_id).entrypoint_1(10).inject()  # incrementByTwo entrypoint
-assert client.contract(contract_id).storage() == 12
+assert conrtact.storage() == 1
+contract.entrypoint_0(10).inject()  # bar entrypoint
+assert contract.storage() == 10
+conrtact.entrypoint_1(10).inject()  # incrementByTwo entrypoint
+assert contract.storage() == 12
 #+end_src
