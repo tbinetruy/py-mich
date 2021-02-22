@@ -71,17 +71,7 @@ class FunctionPrototype:
     return_type: t.Type
 
 
-Addr, VarName = NewType("Address", int), NewType("VarName", str)
 
-
-@dataclass
-class Env:
-    vars: NewType("Environment", Dict[VarName, Addr])
-    sp: int
-    args: NewType("Args", Dict[VarName, List[VarName]])
-
-    def copy(self):
-        return Env(self.vars.copy(), self.sp, self.args.copy())
 
 
 @dataclass
@@ -161,9 +151,6 @@ class Contract:
     storage_type: t.Type
     entrypoints: NewType("Entrypoints", Dict[VarName, Entrypoint])
     instructions: List[Instr]
-
-    def copy(self):
-        return Env(self.vars.copy(), self.sp, self.args.copy())
 
     def add_entrypoint(self, name: str, entrypoint: Entrypoint):
         self.entrypoints[name] = entrypoint

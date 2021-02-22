@@ -10,6 +10,9 @@ class Unit(Type):
     def __init__(self):
         pass
 
+    def __eq__(self, o):
+        return type(self) == type(o)
+
 
 class Int(Type):
     def __init__(self):

@@ -1,3 +1,5 @@
+from dataclasses import dataclass
+from typing import Dict, List
 import ast
 import pprint
 import unittest
@@ -6,7 +8,7 @@ from typing import List, Optional
 import instr_types as t
 from helpers import Tree, ast_to_tree
 from vm import VM
-from vm_types import (Array, Contract, Entrypoint, Env, FunctionPrototype,
+from vm_types import (Array, Contract, Entrypoint, FunctionPrototype,
                       Instr, Pair)
 
 
@@ -26,6 +28,10 @@ def Comment(msg: str):
 
 
 class Record(Tree):
+    def __init__(self, attribute_names, attribute_types):
+        self.attribute_names = attribute_names
+        self.attribute_types = attribute_types
+
     def make_node(self, left, right):
         return Pair(car=left, cdr=right)
 
@@ -44,10 +50,20 @@ class Record(Tree):
         else:
             return self.left_side_tree_height(self.get_left(tree), height + 1)
 
-    def get_type(self, element_types):
-        return self.list_to_tree(element_types)
+    def get_type(self):
+        return self.list_to_tree(self.attribute_types)
 
-    def navigate_to_tree_leaf(self, tree, leaf_number, acc=None):
+    def _attribute_name_to_leaf_number(self, attribute_name):
+        for i, target_name in enumerate(self.attribute_names):
+            if attribute_name == target_name:
+                return i + 1
+
+    def navigate_to_tree_leaf(self, attribute_name, acc=None):
+        leaf_number = self._attribute_name_to_leaf_number(attribute_name)
+        tree = self.list_to_tree([i for i, _ in enumerate(self.attribute_names)])
+        return self._navigate_to_tree_leaf(tree, leaf_number)
+
+    def _navigate_to_tree_leaf(self, tree, leaf_number, acc=None):
         if not acc:
             acc = []
 
@@ -59,24 +75,24 @@ class Record(Tree):
             return (
                 acc
                 + [Instr("CAR", [], {})]
-                + self.navigate_to_tree_leaf(self.get_left(tree), leaf_number)
+                + self._navigate_to_tree_leaf(self.get_left(tree), leaf_number)
             )
         else:
             return (
                 acc
                 + [Instr("CDR", [], {})]
-                + self.navigate_to_tree_leaf(
+                + self._navigate_to_tree_leaf(
                     self.get_right(tree), leaf_number - left_max_leaf_number
                 )
             )
 
-    def compile_node(self, node, acc=None):
+    def _compile_node(self, node, acc=None):
         if not acc:
             acc = []
         if type(node) == Pair:
             return (
-                self.compile_node(node.cdr)
-                + self.compile_node(node.car)
+                self._compile_node(node.cdr)
+                + self._compile_node(node.car)
                 + [Instr("PAIR", [], {})]
             )
         else:
@@ -84,9 +100,38 @@ class Record(Tree):
                 Instr("PUSH", [t.Int(), node], {}),
             ]
 
-    def build_record(self, ordered_elements):
-        tree = self.list_to_tree(ordered_elements)
-        return self.compile_node(tree)
+    def build_record(self, attribute_values):
+        tree = self.list_to_tree(attribute_values)
+        return self._compile_node(tree)
+
+    def _compile_node_new(self, node, compile_function, env):
+        if type(node) == Pair:
+            el1 = self._compile_node_new(node.cdr, compile_function, env)
+            el2 = self._compile_node_new(node.car, compile_function, env)
+            env.sp -= 1  # account for pair
+            return (
+                el1
+                + el2
+                + [Instr("PAIR", [], {})]
+            )
+        else:
+            return compile_function(node, env)
+
+    def compile_record(self, attribute_values, compile_function, env):
+        tree = self.list_to_tree(attribute_values)
+        return self._compile_node_new(tree, compile_function, env)
+
+
+@dataclass
+class Env:
+    vars: Dict[str, int]
+    sp: int
+    args: Dict[str, List[str]]
+    records: Dict[str, Record]
+    types: Dict[str, str]
+
+    def copy(self):
+        return Env(self.vars.copy(), self.sp, self.args.copy(), self.records.copy(), self.types.copy())
 
 
 class Compiler:
@@ -120,6 +165,13 @@ class Compiler:
         value = assign.value
         instructions = self._compile(var_name, e) + self._compile(value, e)
         e.vars[var_name.id] = e.sp
+
+        try:
+            if assign.value.func.id in e.records:
+                e.types[var_name.id] = assign.value.func.id
+        except:
+            pass
+
         try:
             print_val = value.value
         except:
@@ -280,7 +332,17 @@ class Compiler:
         ]
 
     @debug
+    def compile_ccall(self, c: ast.Call, e: Env):
+        """Call to class constructor"""
+        instructions = e.records[c.func.id].compile_record(c.args, self._compile, e)
+        e.vars[c.func.id] = e.sp
+        return instructions
+
+    @debug
     def compile_fcall(self, f: ast.Call, e: Env):
+        if f.func.id in e.records.keys():
+            return self.compile_ccall(f, e)
+
         # We work on an env copy to prevent from polluting the environment
         # with vars that we'd need to remove. We have to remember to pass
         # back the new stack pointer however
@@ -321,7 +383,7 @@ class Compiler:
         return self._compile(r.value, e)
 
     def get_init_env(self):
-        return Env({}, -1, {})
+        return Env({}, -1, {}, {}, {})
 
     @debug
     def compile_entrypoint(self, f: ast.FunctionDef, e: Env) -> List[Instr]:
@@ -369,8 +431,25 @@ class Compiler:
             instructions += self.compile_entrypoint(entrypoint, e)
         return instructions
 
+    @debug
+    def compile_record(self, record_ast: ast.ClassDef, e: Env) -> List[Instr]:
+        attribute_names = [attr.target.id for attr in record_ast.body]
+        attribute_types = []
+        for attr in record_ast.body:
+            attribute_types.append(self.type_parser.parse(attr.annotation))
+
+        e.records[record_ast.name] = Record(attribute_names, attribute_types)
+        return []
+
+    @debug
+    def compile_attribute(self, attribute_ast: ast.Attribute, e: Env) -> List[Instr]:
+        load_object_instructions = self.compile_name(attribute_ast.value, e)
+        record = e.records[e.types[attribute_ast.value.id]]
+        load_attribute_instructions = record.navigate_to_tree_leaf(attribute_ast.attr)
+        return load_object_instructions + load_attribute_instructions
+
     def compile(self):
-        self._compile(self.ast)
+        return self._compile(self.ast)
         return self
 
     def _compile(self, node_ast, e: Optional[Env] = None) -> List[Instr]:
@@ -384,6 +463,8 @@ class Compiler:
                 self.print_instructions(instructions)
         elif type(node_ast) == ast.Assign:
             instructions += self.compile_assign(node_ast, e)
+        elif type(node_ast) == ast.Attribute:
+            instructions += self.compile_attribute(node_ast, e)
         elif type(node_ast) == ast.Expr:
             instructions += self.compile_expr(node_ast, e)
         elif type(node_ast) == ast.Constant:
@@ -405,6 +486,8 @@ class Compiler:
         elif type(node_ast) == ast.ClassDef:
             if node_ast.name == "Contract":
                 instructions += self.compile_contract(node_ast, e)
+            elif "dataclass" in [decorator.id for decorator in node_ast.decorator_list]:
+                instructions += self.compile_record(node_ast, e)
             else:
                 raise NotImplementedError
         else:
@@ -420,22 +503,78 @@ class Compiler:
         print("\n".join([f"{i.name} {i.args} {i.kwargs}" for i in instructions]))
 
 
-class TestContract(unittest.TestCase):
-    def test_build_get_record_entry(self):
-        tree = Record()
-        array = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
-        build_record_instructions = tree.build_record(array)
-        for i in range(1, len(array) + 1):
+class TestRecord(unittest.TestCase):
+    def test_compile_get_record_attribute(self):
+        def test(attribute_name, stack_top_value):
+            source = f"""
+@dataclass
+class Storage:
+    a: int
+    b: int
+    c: int
+    d: int
+    e: int
+    f: int
+
+a = 2
+b = 4
+c = 6
+my_storage = Storage(1, a, 3, b, 5, c)
+my_storage.{attribute_name}
+"""
+            c = Compiler(source)
+            instructions = c.compile()
+            vm = VM()
+            vm._run_instructions(instructions)
+            self.assertEqual(vm.stack[-1], stack_top_value)
+
+        test('a', 1)
+        test('b', 2)
+        test('c', 3)
+        test('d', 4)
+        test('e', 5)
+        test('f', 6)
+
+    def test_compile_create_record(self):
+        source = """
+@dataclass
+class Storage:
+    a: int
+    b: int
+    c: int
+    d: int
+    e: int
+    f: int
+
+a = 2
+b = 4
+c = 6
+my_storage = Storage(1, a, 3, b, 5, c)
+d = 7
+my_storage # get storage
+"""
+        c = Compiler(source)
+        instructions = c.compile()
+        vm = VM()
+        vm._run_instructions(instructions)
+        self.assertEqual(vm.stack[-1], Pair(Pair(Pair(1, 2), Pair(3, 4)), Pair(5, 6)))
+
+    def test_get_record_entry(self):
+        attribute_names = ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l"]
+        attribute_types = [t.Int() for _ in attribute_names]
+        record = Record(attribute_names, attribute_types)
+        attribute_values = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+        build_record_instructions = record.build_record(attribute_values)
+        for i in range(0, len(attribute_values)):
             vm = VM()
             vm._run_instructions(build_record_instructions)
-            get_record_entry = tree.navigate_to_tree_leaf(tree.get_type(array), i)
+            get_record_entry = record.navigate_to_tree_leaf(attribute_names[i])
             vm._run_instructions(get_record_entry)
-            self.assertEqual(vm.stack, [i])
+            self.assertEqual(vm.stack, [attribute_values[i]])
 
     def test_build_record(self):
-        tree = Record()
-
-        instructions = tree.build_record([1, 2])
+        record = Record(["a", "b"], [t.Int(), t.Int()])
+        instructions = record.build_record([1, 2])
         expected_instructions = [
             Instr("PUSH", [t.Int(), 2], {}),
             Instr("PUSH", [t.Int(), 1], {}),
@@ -443,7 +582,8 @@ class TestContract(unittest.TestCase):
         ]
         self.assertEqual(instructions, expected_instructions)
 
-        instructions = tree.build_record([1, 2, 3, 4, 5])
+        record = Record(["a", "b", "c", "d", "e"], [t.Int(), t.Int(), t.Int(), t.Int(), t.Int()])
+        instructions = record.build_record([1, 2, 3, 4, 5])
         expected_instructions = [
             Instr("PUSH", [t.Int(), 5], {}),
             Instr("PUSH", [t.Int(), 4], {}),
@@ -458,13 +598,13 @@ class TestContract(unittest.TestCase):
         self.assertEqual(instructions, expected_instructions)
 
     def test_record_tree(self):
-        tree = Record()
-        record = tree.list_to_tree([1, 2, 3, 4, 5])
+        record = Record(["a", "b", "c", "d", "e"], [t.Int(), t.Int(), t.Int(), t.Int(), t.Int()])
+
         self.assertEqual(
             Pair(car=Pair(car=Pair(car=1, cdr=2), cdr=Pair(car=3, cdr=4)), cdr=5),
-            record,
+            record.list_to_tree([1, 2, 3, 4, 5]),
         )
-        instructions = tree.navigate_to_tree_leaf(record, 1)
+        instructions = record.navigate_to_tree_leaf("a")
         self.assertEqual(
             [
                 Instr(name="CAR", args=[], kwargs={}),
@@ -474,7 +614,7 @@ class TestContract(unittest.TestCase):
             instructions,
         )
 
-        instructions = tree.navigate_to_tree_leaf(record, 2)
+        instructions = record.navigate_to_tree_leaf("b")
         self.assertEqual(
             [
                 Instr(name="CAR", args=[], kwargs={}),
@@ -484,7 +624,7 @@ class TestContract(unittest.TestCase):
             instructions,
         )
 
-        instructions = tree.navigate_to_tree_leaf(record, 3)
+        instructions = record.navigate_to_tree_leaf("c")
         self.assertEqual(
             [
                 Instr(name="CAR", args=[], kwargs={}),
@@ -494,7 +634,7 @@ class TestContract(unittest.TestCase):
             instructions,
         )
 
-        instructions = tree.navigate_to_tree_leaf(record, 4)
+        instructions = record.navigate_to_tree_leaf("d")
         self.assertEqual(
             [
                 Instr(name="CAR", args=[], kwargs={}),
@@ -504,7 +644,7 @@ class TestContract(unittest.TestCase):
             instructions,
         )
 
-        instructions = tree.navigate_to_tree_leaf(record, 5)
+        instructions = record.navigate_to_tree_leaf("e")
         self.assertEqual(
             [
                 Instr(name="CDR", args=[], kwargs={}),
@@ -512,8 +652,8 @@ class TestContract(unittest.TestCase):
             instructions,
         )
 
-    def test_compile_record(self):
-        source = """
+
+class TestContract(unittest.TestCase):
     def test_multi_entrypoint_contract(self):
         vm = VM(isDebug=False)
         source = """
@@ -630,6 +770,7 @@ a + b + c
 
 
 for TestSuite in [
+    TestRecord,
     TestContract,
     TestCompilerUnit,
     TestCompilerList,
