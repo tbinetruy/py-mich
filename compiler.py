@@ -1,15 +1,14 @@
-from dataclasses import dataclass
-from typing import Dict, List
 import ast
 import pprint
 import unittest
-from typing import List, Optional
+from dataclasses import dataclass
+from typing import Dict, List, Optional
 
 import instr_types as t
 from helpers import Tree, ast_to_tree
 from vm import VM
-from vm_types import (Array, Contract, Entrypoint, FunctionPrototype,
-                      Instr, Pair)
+from vm_types import (Array, Contract, Entrypoint, FunctionPrototype, Instr,
+                      Pair)
 
 
 def debug(cb):
@@ -109,11 +108,7 @@ class Record(Tree):
             el1 = self._compile_node_new(node.cdr, compile_function, env)
             el2 = self._compile_node_new(node.car, compile_function, env)
             env.sp -= 1  # account for pair
-            return (
-                el1
-                + el2
-                + [Instr("PAIR", [], {})]
-            )
+            return el1 + el2 + [Instr("PAIR", [], {})]
         else:
             return compile_function(node, env)
 
@@ -131,7 +126,13 @@ class Env:
     types: Dict[str, str]
 
     def copy(self):
-        return Env(self.vars.copy(), self.sp, self.args.copy(), self.records.copy(), self.types.copy())
+        return Env(
+            self.vars.copy(),
+            self.sp,
+            self.args.copy(),
+            self.records.copy(),
+            self.types.copy(),
+        )
 
 
 class Compiler:
@@ -601,12 +602,12 @@ my_storage.{attribute_name}
             vm._run_instructions(instructions)
             self.assertEqual(vm.stack[-1], stack_top_value)
 
-        test('a', 1)
-        test('b', 2)
-        test('c', 3)
-        test('d', 4)
-        test('e', 5)
-        test('f', 6)
+        test("a", 1)
+        test("b", 2)
+        test("c", 3)
+        test("d", 4)
+        test("e", 5)
+        test("f", 6)
 
     def test_compile_create_record(self):
         source = """
@@ -655,7 +656,9 @@ my_storage # get storage
         ]
         self.assertEqual(instructions, expected_instructions)
 
-        record = Record(["a", "b", "c", "d", "e"], [t.Int(), t.Int(), t.Int(), t.Int(), t.Int()])
+        record = Record(
+            ["a", "b", "c", "d", "e"], [t.Int(), t.Int(), t.Int(), t.Int(), t.Int()]
+        )
         instructions = record.build_record([1, 2, 3, 4, 5])
         expected_instructions = [
             Instr("PUSH", [t.Int(), 5], {}),
@@ -671,7 +674,9 @@ my_storage # get storage
         self.assertEqual(instructions, expected_instructions)
 
     def test_record_tree(self):
-        record = Record(["a", "b", "c", "d", "e"], [t.Int(), t.Int(), t.Int(), t.Int(), t.Int()])
+        record = Record(
+            ["a", "b", "c", "d", "e"], [t.Int(), t.Int(), t.Int(), t.Int(), t.Int()]
+        )
 
         self.assertEqual(
             Pair(car=Pair(car=Pair(car=1, cdr=2), cdr=Pair(car=3, cdr=4)), cdr=5),
@@ -922,6 +927,3 @@ for TestSuite in [
 
 if __name__ == "__main__":
     unittest.main()
-
-
-
