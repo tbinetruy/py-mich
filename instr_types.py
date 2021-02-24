@@ -59,6 +59,8 @@ class TypeParser:
     def parse_name(self, name: ast.Name) -> Type:
         if name.id == 'int':
             return Int()
+        if name.id == 'str':
+            return String()
         raise NotImplementedError
 
     def parse(self, type_ast) -> Type:

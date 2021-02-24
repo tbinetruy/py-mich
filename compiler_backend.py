@@ -22,6 +22,10 @@ class CompilerBackend:
             return {
                 "prim": "int",
             }
+        elif type(parameter) == t.String:
+            return {
+                "prim": "string",
+            }
 
     def compile_instruction(self, instruction: Instr):
         if instruction.name == "ADD":
@@ -53,9 +57,11 @@ class CompilerBackend:
         elif instruction.name == "PAIR":
             return {"prim": "PAIR"}
         elif instruction.name == "PUSH":
-            type_name = {"prim": str(instruction.args[0])}
-            pushed_literal = {str(instruction.args[0]): str(instruction.args[1])}
-            return {"prim": "PUSH", "args": [type_name, pushed_literal]}
+            constant_type = instruction.args[0]
+            constant = instruction.args[1]
+            type_name = self.compile_type(constant_type)
+            pushed_constant = {str(constant_type): str(constant)}
+            return {"prim": "PUSH", "args": [type_name, pushed_constant]}
         elif instruction.name == "SWAP":
             return {"prim": "SWAP"}
         elif instruction.name == "EXEC":

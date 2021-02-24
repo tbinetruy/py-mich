@@ -183,10 +183,15 @@ class Compiler:
         return self._compile(expr.value, e)
 
     @debug
-    def compile_num(self, num: ast.Constant, e: Env) -> List[Instr]:
+    def compile_constant(self, constant: ast.Constant, e: Env) -> List[Instr]:
         e.sp += 1  # Account for PUSH
+
+        constant_type: t.Type = t.Int()
+        if type(constant.value) == str:
+            constant_type = t.String()
+
         return [
-            Instr("PUSH", [t.Int(), num.value], {}),
+            Instr("PUSH", [constant_type, constant.value], {}),
         ]
 
     @debug
@@ -536,7 +541,7 @@ class Compiler:
         elif type(node_ast) == ast.Expr:
             instructions += self.compile_expr(node_ast, e)
         elif type(node_ast) == ast.Constant:
-            instructions += self.compile_num(node_ast, e)
+            instructions += self.compile_constant(node_ast, e)
         elif type(node_ast) == ast.Name:
             instructions += self.compile_name(node_ast, e)
         elif type(node_ast) == ast.BinOp:
@@ -722,6 +727,34 @@ my_storage # get storage
 
 
 class TestContract(unittest.TestCase):
+    def test_contract_multitype_storage(self):
+        vm = VM(isDebug=False)
+        source = """
+@dataclass
+class Storage:
+    owner: str
+    counter: int
+
+class Contract:
+    def deploy():
+        return Storage("foo", 0)
+
+    def add(a: int) -> int:
+        return Storage(self.storage.owner, self.storage.counter + a)
+
+    def update_owner(new_owner: str) -> int:
+        return Storage(new_owner, self.storage.counter)
+        """
+        c = Compiler(source, isDebug=False)
+        c._compile(c.ast)
+        vm.run_contract(c.contract, "add", 10)
+        self.assertEqual(c.contract.storage, Pair("foo", 10))
+        self.assertEqual(vm.stack, [])
+
+        vm.run_contract(c.contract, "update_owner", "bar")
+        self.assertEqual(c.contract.storage, Pair("bar", 10))
+        self.assertEqual(vm.stack, [])
+
     def test_contract_storage(self):
         vm = VM(isDebug=False)
         source = """
@@ -865,6 +898,14 @@ a + b + c
         instructions = c._compile(c.ast)
         vm._run_instructions(instructions)
         self.assertEqual(vm.stack, [1, 2, 5, 8])
+
+    def test_push_string(self):
+        vm = VM(isDebug=False)
+        source = "'foobar'"
+        c = Compiler(source, isDebug=False)
+        instructions = c._compile(c.ast)
+        vm._run_instructions(instructions)
+        self.assertEqual(vm.stack, ["foobar"])
 
 
 for TestSuite in [
