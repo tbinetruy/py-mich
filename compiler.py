@@ -335,7 +335,6 @@ class Compiler:
     def compile_ccall(self, c: ast.Call, e: Env):
         """Call to class constructor"""
         instructions = e.records[c.func.id].compile_record(c.args, self._compile, e)
-        e.vars[c.func.id] = e.sp
         return instructions
 
     @debug
@@ -387,7 +386,6 @@ class Compiler:
 
     @debug
     def compile_entrypoint(self, f: ast.FunctionDef, e: Env) -> List[Instr]:
-        prototype = self._get_function_prototype(f)
 
         # Save the storage and entrypoint argument on the stack
         if not self.contract.instructions:
@@ -414,21 +412,65 @@ class Compiler:
             Instr("PAIR", [], {}),
         ]
 
+        entrypoint_instructions = []
+        for ast in f.body:
+            entrypoint_instructions += self._compile(ast, e)
+
+        ### TODO START: common code from compile_defun, refactor in helper
+
+        # Free from the top of the stack. this ensures that the variable pointers
+        # are not changed as variables are freed from the stack
+        sorted_keys = sorted(list(e.vars.keys()), key=lambda a: e.vars[a], reverse=True)
+
+        # remove env vars from memory
+        free_var_instructions = []
+        for var_name in sorted_keys:
+            instr, tmp_env = self.free_var(var_name, e)
+            free_var_instructions += instr
+            try:
+                del e.vars[var_name]
+            except:
+                pass
+
+        ### TODO END
+
         entrypoint_instructions = (
-            self._compile(f, e)[-1].args[2]
-            + free_argument_instructions
-            + free_storage_instructions
+            entrypoint_instructions
+            + free_var_instructions
             + epilogue
         )
+        prototype = self._get_function_prototype(f)
         entrypoint = Entrypoint(prototype, entrypoint_instructions)
         self.contract.add_entrypoint(f.name, entrypoint)
         return []
 
     @debug
+    def compile_storage(self, storage_ast, e: Env):
+        if type(storage_ast) == ast.Call:
+            # assume constructed from record
+            storage_type = storage_ast.func.id
+            e.types["__STORAGE__"] = storage_type
+            self.contract.storage_type = e.records[storage_type].get_type()
+
+            # TODO fix this mess
+            vm = VM()
+            init_storage_instr = e.records[storage_type].compile_record(storage_ast.args, self._compile, self.get_init_env())
+            vm._run_instructions(init_storage_instr)
+            self.contract.storage = vm.stack[-1]
+        else:
+            return NotImplementedError
+
+    @debug
     def compile_contract(self, contract_ast: ast.ClassDef, e: Env) -> List[Instr]:
         instructions = []
         for entrypoint in contract_ast.body:
-            instructions += self.compile_entrypoint(entrypoint, e)
+            if entrypoint.name == "deploy":
+                if type(entrypoint.body[0]) == ast.Return:
+                    self.compile_storage(entrypoint.body[0].value, e)
+                else:
+                    return NotImplementedError
+            else:
+                instructions += self.compile_entrypoint(entrypoint, e)
         return instructions
 
     @debug
@@ -441,8 +483,34 @@ class Compiler:
         e.records[record_ast.name] = Record(attribute_names, attribute_types)
         return []
 
+    def handle_get_storage(self, storage_get_ast: ast.Attribute, e: Env) -> List[Instr]:
+        if storage_get_ast.attr != "storage":
+            # storage is record
+            key = storage_get_ast.attr
+            load_storage_instr = self.compile_name(ast.Name(id='storage', ctx=ast.Load()), e)
+            storage_key_name = storage_get_ast.attr
+            get_storage_key_instr = e.records[e.types['__STORAGE__']].navigate_to_tree_leaf(storage_key_name)
+            return load_storage_instr + get_storage_key_instr
+        else:
+            return NotImplementedError
+
+    def check_get_storage(self, storage_get_ast: ast.Attribute) -> bool:
+        try:
+            return (
+                storage_get_ast.value.value.id == "self"
+                and storage_get_ast.value.attr == "storage"
+            )
+        except:
+            return (
+                storage_get_ast.value.id == "self"
+                and storage_get_ast.attr == "storage"
+            )
+
     @debug
     def compile_attribute(self, attribute_ast: ast.Attribute, e: Env) -> List[Instr]:
+        if self.check_get_storage(attribute_ast):
+            return self.handle_get_storage(attribute_ast, e)
+
         load_object_instructions = self.compile_name(attribute_ast.value, e)
         record = e.records[e.types[attribute_ast.value.id]]
         load_attribute_instructions = record.navigate_to_tree_leaf(attribute_ast.attr)
@@ -654,6 +722,36 @@ my_storage # get storage
 
 
 class TestContract(unittest.TestCase):
+    def test_contract_storage(self):
+        vm = VM(isDebug=False)
+        source = """
+@dataclass
+class Storage:
+    owner_id: int
+    counter: int
+
+class Contract:
+    def deploy():
+        return Storage(1, 0)
+
+    def add(a: int) -> int:
+        b = 10
+        new_storage = Storage(self.storage.owner_id, self.storage.counter + a + b)
+        return new_storage
+
+    def update_owner_id(new_id: int) -> int:
+        return Storage(new_id, self.storage.counter)
+        """
+        c = Compiler(source, isDebug=False)
+        c._compile(c.ast)
+        vm.run_contract(c.contract, "add", 10)
+        self.assertEqual(c.contract.storage, Pair(1, 20))
+        self.assertEqual(vm.stack, [])
+
+        vm.run_contract(c.contract, "update_owner_id", 111)
+        self.assertEqual(c.contract.storage, Pair(111, 20))
+        self.assertEqual(vm.stack, [])
+
     def test_multi_entrypoint_contract(self):
         vm = VM(isDebug=False)
         source = """
