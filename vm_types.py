@@ -149,7 +149,7 @@ class EntrypointTree(Tree):
 class Contract:
     storage: Any
     storage_type: t.Type
-    entrypoints: NewType("Entrypoints", Dict[VarName, Entrypoint])
+    entrypoints: Dict[str, Entrypoint]
     instructions: List[Instr]
 
     def add_entrypoint(self, name: str, entrypoint: Entrypoint):
