@@ -61,29 +61,81 @@ class VM:
 
     def __init__(self, isDebug=False):
         self.isDebug = isDebug
+        self._reset_stack()
 
         # See: https://tezos.gitlab.io/whitedoc/michelson.html
         self.instruction_mapping = {
             "ADD": self.add,
             "CAR": self.car,
             "CDR": self.cdr,
+            "COMMENT": lambda *args, **kwargs: 1,
+            "COMPARE": self.compare,
+            "CONS": self.append_before_list,
             "DIP": self.dip,
             "DIG": self.dig,
             "DUG": self.dug,
             "DROP": self.pop,
             "DUP": self.dup,
+            "EQ": self.eq,
+            "EXEC": self.run_lambda,
+            "GE": self.ge,
+            "GT": self.gt,
+            "IF": self.if_,
+            "IF_LEFT": self.if_left,
+            "LAMBDA": self.store_lambda,
+            "LE": self.le,
+            "LT": self.lt,
+            "NEQ": self.neq,
             "NIL": self.nil,
             "PAIR": self.make_pair,
             "PUSH": self.push,
             "SWAP": self.swap,
-            "EXEC": self.run_lambda,
-            "LAMBDA": self.store_lambda,
-            "CONS": self.append_before_list,
-            "IF_LEFT": self.if_left,
-            "COMMENT": lambda *args, **kwargs: 1,
         }
 
-        self._reset_stack()
+    def if_(self, cond_true, cond_false):
+        self._assert_min_stack_length(1)
+        actual_t, expected_t = type(self.stack[-1]), bool
+        if actual_t != expected_t:
+            raise VMTypeException(expected_t, actual_t, "Car requires a pair")
+
+        if self.pop():
+            self._run_instructions(cond_true)
+        else:
+            self._run_instructions(cond_false)
+
+    def eq(self):
+        x = self.pop()
+        self._push(x == 0)
+
+    def neq(self):
+        x = self.pop()
+        self._push(x != 0)
+
+    def lt(self):
+        x = self.pop()
+        self._push(x < 0)
+
+    def gt(self):
+        x = self.pop()
+        self._push(x > 0)
+
+    def le(self):
+        x = self.pop()
+        self._push(x <= 0)
+
+    def ge(self):
+        x = self.pop()
+        self._push(x >= 0)
+
+    def compare(self):
+        x = self.pop()
+        y = self.pop()
+        if x < y:
+            self._push(-1)
+        elif x == y:
+            self._push(0)
+        else:
+            self._push(1)
 
     def store_lambda(self, args_types, return_type, body) -> None:
         self._push(body)
@@ -552,6 +604,152 @@ class TestVM(unittest.TestCase):
         vm.push(t.Int(), c)
         # stack grows towards larger addresses
         self.assertEqual(vm.stack, [a, b, c])
+
+    def test_eq(self):
+        vm = VM()
+
+        x = 0
+        vm.push(t.Int(), x)
+        vm._run_instructions([Instr("EQ", [], {})])
+        self.assertEqual(vm.stack, [True])
+
+        vm.stack = []
+
+        x = 1
+        vm.push(t.Int(), x)
+        vm._run_instructions([Instr("EQ", [], {})])
+        self.assertEqual(vm.stack, [False])
+
+    def test_neq(self):
+        vm = VM()
+
+        x = 1
+        vm.push(t.Int(), x)
+        vm._run_instructions([Instr("NEQ", [], {})])
+        self.assertEqual(vm.stack, [True])
+
+        vm.stack = []
+
+        x = 0
+        vm.push(t.Int(), x)
+        vm._run_instructions([Instr("NEQ", [], {})])
+        self.assertEqual(vm.stack, [False])
+
+    def test_lt(self):
+        vm = VM()
+
+        x = -1
+        vm.push(t.Int(), x)
+        vm._run_instructions([Instr("LT", [], {})])
+        self.assertEqual(vm.stack, [True])
+
+        vm.stack = []
+
+        x = 0
+        vm.push(t.Int(), x)
+        vm._run_instructions([Instr("LT", [], {})])
+        self.assertEqual(vm.stack, [False])
+
+    def test_gt(self):
+        vm = VM()
+
+        x = 1
+        vm.push(t.Int(), x)
+        vm._run_instructions([Instr("GT", [], {})])
+        self.assertEqual(vm.stack, [True])
+
+        vm.stack = []
+
+        x = 0
+        vm.push(t.Int(), x)
+        vm._run_instructions([Instr("LT", [], {})])
+        self.assertEqual(vm.stack, [False])
+
+    def test_le(self):
+        vm = VM()
+
+        x = -1
+        vm.push(t.Int(), x)
+        vm._run_instructions([Instr("LE", [], {})])
+        self.assertEqual(vm.stack, [True])
+
+        vm.stack = []
+
+        x = 0
+        vm.push(t.Int(), x)
+        vm._run_instructions([Instr("LE", [], {})])
+        self.assertEqual(vm.stack, [True])
+
+        vm.stack = []
+
+        x = 1
+        vm.push(t.Int(), x)
+        vm._run_instructions([Instr("LE", [], {})])
+        self.assertEqual(vm.stack, [False])
+
+    def test_ge(self):
+        vm = VM()
+
+        x = 1
+        vm.push(t.Int(), x)
+        vm._run_instructions([Instr("GE", [], {})])
+        self.assertEqual(vm.stack, [True])
+
+        vm.stack = []
+
+        x = 0
+        vm.push(t.Int(), x)
+        vm._run_instructions([Instr("GE", [], {})])
+        self.assertEqual(vm.stack, [True])
+
+        vm.stack = []
+
+        x = -1
+        vm.push(t.Int(), x)
+        vm._run_instructions([Instr("GE", [], {})])
+        self.assertEqual(vm.stack, [False])
+
+    def test_compare(self):
+        vm = VM()
+
+        x, y = 1, 2
+        vm.push(t.Int(), y)
+        vm.push(t.Int(), x)
+        vm._run_instructions([Instr("COMPARE", [], {})])
+        self.assertEqual(vm.stack, [-1])
+
+        vm.stack = []
+
+        x, y = 2, 1
+        vm.push(t.Int(), y)
+        vm.push(t.Int(), x)
+        vm._run_instructions([Instr("COMPARE", [], {})])
+        self.assertEqual(vm.stack, [1])
+
+        vm.stack = []
+
+        x, y = 2, 2
+        vm.push(t.Int(), y)
+        vm.push(t.Int(), x)
+        vm._run_instructions([Instr("COMPARE", [], {})])
+        self.assertEqual(vm.stack, [0])
+
+    def test_if(self):
+        vm = VM()
+        vm._push(True)
+        instructions = [
+            Instr("IF", [[Instr("PUSH", [t.Int(), 1], {})], [Instr("PUSH", [t.Int(), 2], {})]], {})
+        ]
+        vm._run_instructions(instructions)
+        self.assertEqual(vm.stack, [1])
+
+        vm = VM()
+        vm._push(False)
+        instructions = [
+            Instr("IF", [[Instr("PUSH", [t.Int(), 1], {})], [Instr("PUSH", [t.Int(), 2], {})]], {})
+        ]
+        vm._run_instructions(instructions)
+        self.assertEqual(vm.stack, [2])
 
     def test_pop(self):
         vm = VM()
