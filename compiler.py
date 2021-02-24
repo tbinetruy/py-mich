@@ -522,6 +522,31 @@ class Compiler:
         load_attribute_instructions = record.navigate_to_tree_leaf(attribute_ast.attr)
         return load_object_instructions + load_attribute_instructions
 
+    @debug
+    def compile_compare(self, compare_ast: ast.Compare, e: Env) -> List[Instr]:
+        compare_instructions = (
+            self._compile(compare_ast.comparators[0], e)
+            + self._compile(compare_ast.left, e)
+            + [Instr("COMPARE", [], {})]
+        )
+
+        operator_type = type(compare_ast.ops[0])
+        if operator_type == ast.Eq:
+            operator_instructions = [Instr("EQ", [], {})]
+        elif operator_type == ast.NotEq:
+            operator_instructions = [Instr("NEQ", [], {})]
+        elif operator_type == ast.Lt:
+            operator_instructions = [Instr("LT", [], {})]
+        elif operator_type == ast.Gt:
+            operator_instructions = [Instr("GT", [], {})]
+        elif operator_type == ast.LtE:
+            operator_instructions = [Instr("LE", [], {})]
+        elif operator_type == ast.GtE:
+            operator_instructions = [Instr("GE", [], {})]
+        else:
+            return NotImplementedError
+
+        return compare_instructions + operator_instructions
     def compile(self):
         return self._compile(self.ast)
         return self
@@ -543,6 +568,8 @@ class Compiler:
             instructions += self.compile_expr(node_ast, e)
         elif type(node_ast) == ast.Constant:
             instructions += self.compile_constant(node_ast, e)
+        elif type(node_ast) == ast.Compare:
+            instructions += self.compile_compare(node_ast, e)
         elif type(node_ast) == ast.Name:
             instructions += self.compile_name(node_ast, e)
         elif type(node_ast) == ast.BinOp:
@@ -911,6 +938,21 @@ a + b + c
         instructions = c._compile(c.ast)
         vm._run_instructions(instructions)
         self.assertEqual(vm.stack, ["foobar"])
+
+    def test_compare(self):
+        vm = VM(isDebug=False)
+        source = "1 < 2"
+        c = Compiler(source, isDebug=False)
+        instructions = c._compile(c.ast)
+        expected_instructions = [
+            Instr("PUSH", [t.Int(), 2], {}),
+            Instr("PUSH", [t.Int(), 1], {}),
+            Instr("COMPARE", [], {}),
+            Instr("LT", [], {}),
+        ]
+        vm._run_instructions(instructions)
+        self.assertEqual(vm.stack, [True])
+        self.assertEqual(instructions, expected_instructions)
 
 
 for TestSuite in [
