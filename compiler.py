@@ -159,8 +159,35 @@ class Compiler:
 
         return instructions
 
+    def _compile_reassign(self, reassign_ast: ast.Assign, e: Env) -> List[Instr]:
+        instructions: List[Instr] = []
+        var_name = reassign_ast.targets[0]
+        value = reassign_ast.value
+        var_addr = e.vars[var_name.id]
+        instructions = self._compile(value, e)
+        free_vars_instructions, _ = self.free_var(var_name.id, e)
+        instructions = instructions + free_vars_instructions + [
+            Instr("DUG", [e.sp - var_addr], {}),
+        ]
+        e.vars[var_name.id] = var_addr
+
+        try:
+            if reassign_ast.value.func.id in e.records:
+                e.types[var_name.id] = reassign_ast.value.func.id
+        except:
+            pass
+
+        try:
+            print_val = value.value
+        except:
+            print_val = "[object]"
+        return [Comment(f"Reassigning {var_name.id} = {print_val}")] + instructions
+
     @debug
     def compile_assign(self, assign: ast.Assign, e: Env) -> List[Instr]:
+        if assign.targets[0].id in e.vars.keys():
+            return self._compile_reassign(assign, e)
+
         instructions: List[Instr] = []
         var_name = assign.targets[0]
         value = assign.value
@@ -871,7 +898,7 @@ class TestCompilerAssign(unittest.TestCase):
         source = """
 a = 1
 b = 2
-a = b
+a = a + 2
         """
         c = Compiler(source, isDebug=False)
         instructions = c._compile(c.ast)
@@ -879,8 +906,8 @@ a = b
         # TODO: make vm.stack == [1, 2]
         #       and c.env.vars['a'] == 0 even
         #       after reassign
-        self.assertEqual(vm.stack, [1, 2, 2])
-        self.assertEqual(c.env.vars["a"], 2)
+        self.assertEqual(vm.stack, [3, 2])
+        self.assertEqual(c.env.vars["a"], 0)
         self.assertEqual(c.env.vars["b"], 1)
 
 
