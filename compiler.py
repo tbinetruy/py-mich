@@ -6,7 +6,7 @@ from typing import Dict, List, Optional
 
 import instr_types as t
 from helpers import Tree, ast_to_tree
-from vm import VM
+from vm import VM, VMFailwithException
 from vm_types import (Array, Contract, Entrypoint, FunctionPrototype, Instr,
                       Pair)
 
@@ -579,6 +579,10 @@ class Compiler:
         if_false_instructions = self._compile_block(if_ast.orelse, e.copy())
         if_instructions = [Instr("IF", [if_true_instructions, if_false_instructions], {})]
         return test_instructions + if_instructions
+
+    def compile_raise(self, raise_ast: ast.Raise, e: Env) -> List[Instr]:
+        return self._compile(raise_ast.exc, e) + [Instr("FAILWITH", [], {})]
+
     def compile(self):
         return self._compile(self.ast)
         return self
@@ -616,6 +620,8 @@ class Compiler:
             instructions += self.compile_defun(node_ast, e)
         elif type(node_ast) == ast.Return:
             instructions += self.compile_return(node_ast, e)
+        elif type(node_ast) == ast.Raise:
+            instructions += self.compile_raise(node_ast, e)
         elif type(node_ast) == ast.Call:
             instructions += self.compile_fcall(node_ast, e)
         elif type(node_ast) == ast.ClassDef:
@@ -1033,6 +1039,41 @@ else:
         vm._run_instructions(instructions)
         self.assertEqual(vm.stack, ["bar"])
         self.assertEqual(c.env.vars["foo"], 0)
+
+    def test_if_failwith(self):
+        vm = VM(isDebug=False)
+        source = """
+foo = "foo"
+if 1 < 2:
+    raise "my error"
+else:
+    foo = "baz"
+        """
+        c = Compiler(source, isDebug=False)
+        instructions = c._compile(c.ast)
+        try:
+            vm._run_instructions(instructions)
+            assert 0
+        except VMFailwithException:
+            assert 1
+
+    def test_raise(self):
+        vm = VM(isDebug=False)
+        source = "raise 'foobar'"
+        c = Compiler(source, isDebug=False)
+        instructions = c._compile(c.ast)
+        expected_instructions = [
+            Instr("PUSH", [t.String(), 'foobar'], {}),
+            Instr("FAILWITH", [], {})
+        ]
+        self.assertEqual(instructions, expected_instructions)
+        try:
+            vm._run_instructions(instructions)
+            assert 0
+        except VMFailwithException:
+            assert 1
+
+
 for TestSuite in [
     TestRecord,
     TestContract,

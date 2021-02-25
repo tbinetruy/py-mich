@@ -9,6 +9,17 @@ from vm_types import (Array, Contract, Entrypoint, FunctionPrototype, Instr,
 ph = 42  # placeholder
 
 
+class VMFailwithException(Exception):
+    """Raised when a FAILWITH instruction is executed
+
+    Attributes:
+        message -- error message
+    """
+
+    def __init__(self, message):
+        self.message = message
+
+
 class VMStackException(Exception):
     """Raised when stack error occurs
 
@@ -78,6 +89,7 @@ class VM:
             "DUP": self.dup,
             "EQ": self.eq,
             "EXEC": self.run_lambda,
+            "FAILWITH": self.failwith,
             "GE": self.ge,
             "GT": self.gt,
             "IF": self.if_,
@@ -91,6 +103,11 @@ class VM:
             "PUSH": self.push,
             "SWAP": self.swap,
         }
+
+    def failwith(self):
+        error_message = self.stack.pop()
+        self._reset_stack()
+        raise VMFailwithException(error_message)
 
     def if_(self, cond_true, cond_false):
         self._assert_min_stack_length(1)
@@ -453,6 +470,18 @@ class TestContract(unittest.TestCase):
 
 
 class TestVM(unittest.TestCase):
+    def test_failwith(self):
+        vm = VM()
+        instructions = [
+            Instr("PUSH", [t.String(), "My error message"], {}),
+            Instr("FAILWITH", [], {}),
+        ]
+        try:
+            vm._run_instructions(instructions)
+            assert 0
+        except VMFailwithException:
+            assert 1
+
     def test_if_left(self):
         vm = VM()
         instructions = [
