@@ -337,37 +337,16 @@ class Compiler:
         func_env.sp += 1
         func_env.vars[f.args.args[0].arg] = func_env.sp
 
-        # iterate body instructions
-        body_instructions = []
-        for i in f.body:
-            body_instructions += self._compile(i, func_env)
-
-        # get new func_env keys
-        new_var_names = set(func_env.vars.keys())
-
-        # intersect init and new env keys
-        intersection = list(new_var_names - init_var_names)
-
-        # Free from the top of the stack. this ensures that the variable pointers
-        # are not changed as variables are freed from the stack
-        sorted_keys = sorted(intersection, key=lambda a: func_env.vars[a], reverse=True)
-
-        # remove env vars from memory
-        free_var_instructions = []
-        tmp_env = func_env
-        for var_name in sorted_keys:
-            instr, tmp_env = self.free_var(var_name, tmp_env)
-            free_var_instructions += instr
-            try:
-                del e.vars[var_name]
-            except:
-                pass
+        body_instructions = self._compile_block(f.body, func_env)
+        # account for pushed result
+        func_env.sp += 1
+        body_instructions += self.free_var(f.args.args[0].arg, func_env)[0]
 
         comment = [Comment(f"Storing function {f.name} at {e.vars[f.name]}")]
         return comment + [
             Instr(
                 "LAMBDA",
-                [arg_type, return_type, body_instructions + free_var_instructions],
+                [arg_type, return_type, body_instructions],
                 {},
             ),
         ]
@@ -453,37 +432,42 @@ class Compiler:
             Instr("PAIR", [], {}),
         ]
 
-        entrypoint_instructions = []
-        for ast in f.body:
-            entrypoint_instructions += self._compile(ast, e)
-
-        ### TODO START: common code from compile_defun, refactor in helper
-
-        # Free from the top of the stack. this ensures that the variable pointers
-        # are not changed as variables are freed from the stack
-        sorted_keys = sorted(list(e.vars.keys()), key=lambda a: e.vars[a], reverse=True)
-
-        # remove env vars from memory
-        free_var_instructions = []
-        for var_name in sorted_keys:
-            instr, tmp_env = self.free_var(var_name, e)
-            free_var_instructions += instr
-            try:
-                del e.vars[var_name]
-            except:
-                pass
-
-        ### TODO END
-
-        entrypoint_instructions = (
-            entrypoint_instructions
-            + free_var_instructions
-            + epilogue
-        )
+        entrypoint_instructions = self._compile_block(f.body, e) + free_argument_instructions + free_storage_instructions + epilogue
         prototype = self._get_function_prototype(f)
         entrypoint = Entrypoint(prototype, entrypoint_instructions)
         self.contract.add_entrypoint(f.name, entrypoint)
         return []
+
+    def _compile_block(self, block_ast: List[ast.AST], e: Env) -> List[Instr]:
+        """frees newly declared variables at the end of the block, hence °e°
+        should be the same befor and after the block"""
+        # get init env keys
+        init_var_names = set(e.vars.keys())
+
+        block_env = e.copy()
+
+        # iterate body instructions
+        block_instructions = []
+        for i in block_ast:
+            block_instructions += self._compile(i, block_env)
+
+        # get new func_env keys
+        new_var_names = set(block_env.vars.keys())
+
+        # intersect init and new env keys
+        intersection = list(new_var_names - init_var_names)
+
+        # Free from the top of the stack. this ensures that the variable pointers
+        # are not changed as variables are freed from the stack
+        sorted_keys = sorted(intersection, key=lambda a: block_env.vars[a], reverse=True)
+
+        # remove env vars from memory
+        free_var_instructions = []
+        for var_name in sorted_keys:
+            instr, block_env = self.free_var(var_name, block_env)
+            free_var_instructions += instr
+
+        return block_instructions + free_var_instructions
 
     @debug
     def compile_storage(self, storage_ast, e: Env):
@@ -564,6 +548,8 @@ class Compiler:
             + self._compile(compare_ast.left, e)
             + [Instr("COMPARE", [], {})]
         )
+        # Account for COMPARE
+        e.sp -= 1
 
         operator_type = type(compare_ast.ops[0])
         if operator_type == ast.Eq:
@@ -582,6 +568,17 @@ class Compiler:
             return NotImplementedError
 
         return compare_instructions + operator_instructions
+
+    def compile_if(self, if_ast: ast.If, e: Env) -> List[Instr]:
+        test_instructions = self._compile(if_ast.test, e)
+
+        # Account for "IF" poping the boolean sitting at the top of the stack
+        e.sp -= 1
+
+        if_true_instructions = self._compile_block(if_ast.body, e.copy())
+        if_false_instructions = self._compile_block(if_ast.orelse, e.copy())
+        if_instructions = [Instr("IF", [if_true_instructions, if_false_instructions], {})]
+        return test_instructions + if_instructions
     def compile(self):
         return self._compile(self.ast)
         return self
@@ -601,6 +598,8 @@ class Compiler:
             instructions += self.compile_attribute(node_ast, e)
         elif type(node_ast) == ast.Expr:
             instructions += self.compile_expr(node_ast, e)
+        elif type(node_ast) == ast.If:
+            instructions += self.compile_if(node_ast, e)
         elif type(node_ast) == ast.Constant:
             instructions += self.compile_constant(node_ast, e)
         elif type(node_ast) == ast.Compare:
@@ -1007,7 +1006,33 @@ a + b + c
         self.assertEqual(vm.stack, [True])
         self.assertEqual(instructions, expected_instructions)
 
+    def test_if(self):
+        vm = VM(isDebug=False)
+        source = """
+if 1 < 2:
+    "foo"
+else:
+    "bar"
+        """
+        c = Compiler(source, isDebug=False)
+        instructions = c._compile(c.ast)
+        vm._run_instructions(instructions)
+        self.assertEqual(vm.stack, ["foo"])
 
+    def test_if_reassign(self):
+        vm = VM(isDebug=False)
+        source = """
+foo = "foo"
+if 1 < 2:
+    foo = "bar"
+else:
+    foo = "baz"
+        """
+        c = Compiler(source, isDebug=False)
+        instructions = c._compile(c.ast)
+        vm._run_instructions(instructions)
+        self.assertEqual(vm.stack, ["bar"])
+        self.assertEqual(c.env.vars["foo"], 0)
 for TestSuite in [
     TestRecord,
     TestContract,
