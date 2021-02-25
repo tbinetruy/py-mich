@@ -325,7 +325,6 @@ class Compiler:
         e.vars[f.name] = e.sp
         e.args[f.name] = f.args.args[0].arg
 
-        ast.dump(f.args.args[0])
         prototype = self._get_function_prototype(f)
         arg_type, return_type = prototype.arg_type, prototype.return_type
         # get init env keys
