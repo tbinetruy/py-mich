@@ -799,6 +799,88 @@ my_storage # get storage
 
 
 class TestContract(unittest.TestCase):
+    def test_contract_final(self):
+        vm = VM(isDebug=False)
+        owner =  "tzaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        source = f"""
+@dataclass
+class Storage:
+    owner: address
+    name: str
+    counter: int
+
+class Contract:
+    def deploy():
+        return Storage("{owner}", "foo", 0)
+
+    def add(a: int) -> int:
+        if a < 10:
+            raise 'input smaller than 10'
+        else:
+            a = a + a
+            return Storage(self.storage.owner, self.storage.name, self.storage.counter + a)
+
+    def update_owner(new_owner: address) -> int:
+        return Storage(new_owner, self.storage.name, self.storage.counter)
+
+    def update_name(new_name: str) -> int:
+        return Storage(self.storage.owner, new_name, self.storage.counter)
+        """
+        c = Compiler(source, isDebug=False)
+        c._compile(c.ast)
+        try:
+            vm.run_contract(c.contract, "add", 1)
+            assert 0
+        except VMFailwithException:
+            assert 1
+
+        vm.run_contract(c.contract, "add", 10)
+        self.assertEqual(c.contract.storage, Pair(Pair(owner, "foo"), 20))
+        self.assertEqual(vm.stack, [])
+
+        new_owner = "tzbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        vm.run_contract(c.contract, "update_owner", new_owner)
+        self.assertEqual(c.contract.storage, Pair(Pair(new_owner, "foo"), 20))
+        self.assertEqual(vm.stack, [])
+
+        vm.run_contract(c.contract, "update_name", "bar")
+        self.assertEqual(c.contract.storage, Pair(Pair(new_owner, "bar"), 20))
+        self.assertEqual(vm.stack, [])
+
+    def test_contract_multitype_storage_with_condition(self):
+        vm = VM(isDebug=False)
+        source = """
+@dataclass
+class Storage:
+    owner: str
+    counter: int
+
+class Contract:
+    def deploy():
+        return Storage("foo", 0)
+
+    def add(a: int) -> int:
+        if a < 10:
+            raise 'input smaller than 10'
+        else:
+            a = a + a
+            return Storage(self.storage.owner, self.storage.counter + a)
+
+    def update_owner(new_owner: str) -> int:
+        return Storage(new_owner, self.storage.counter)
+        """
+        c = Compiler(source, isDebug=False)
+        c._compile(c.ast)
+        try:
+            vm.run_contract(c.contract, "add", 1)
+            assert 0
+        except VMFailwithException:
+            assert 1
+
+        vm.run_contract(c.contract, "add", 10)
+        self.assertEqual(c.contract.storage, Pair("foo", 20))
+        self.assertEqual(vm.stack, [])
+
     def test_contract_multitype_storage(self):
         vm = VM(isDebug=False)
         source = """
