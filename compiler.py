@@ -210,13 +210,21 @@ class Compiler:
     def compile_expr(self, expr: ast.Expr, e: Env) -> List[Instr]:
         return self._compile(expr.value, e)
 
+    def _is_string_address(self, string: str) -> bool:
+        is_tz_address = len(string) == 36 and string[:2] == "tz"
+        is_kt_address = len(string) == 36 and string[:2] == "KT"
+        return is_tz_address or is_kt_address
+
     @debug
     def compile_constant(self, constant: ast.Constant, e: Env) -> List[Instr]:
         e.sp += 1  # Account for PUSH
 
         constant_type: t.Type = t.Int()
         if type(constant.value) == str:
-            constant_type = t.String()
+            if self._is_string_address(constant.value):
+                constant_type = t.Address()
+            else:
+                constant_type = t.String()
 
         return [
             Instr("PUSH", [constant_type, constant.value], {}),
@@ -945,6 +953,24 @@ foo(1, 2)
 
 
 class TestCompilerIntegration(unittest.TestCase):
+    def test_push_address(self):
+        user_address = "tz1S792fHX5rvs6GYP49S1U58isZkp2bNmn6"
+        contract_address = "KT1EwUrkbmGxjiRvmEAa8HLGhjJeRocqVTFi"
+        regular_string = "foobar"
+        source = f"""
+user_address = "{user_address}"
+contract_address = "{contract_address}"
+regular_string = "{regular_string}"
+        """
+        c = Compiler(source, isDebug=False)
+        instructions = [instr for instr in c._compile(c.ast) if instr.name != "COMMENT"]
+        expected_instructions = [
+            Instr("PUSH", [t.Address(), user_address], {}),
+            Instr("PUSH", [t.Address(), contract_address], {}),
+            Instr("PUSH", [t.String(), regular_string], {}),
+        ]
+        self.assertEqual(instructions, expected_instructions)
+
     def test_store_vars_and_add(self):
         vm = VM(isDebug=False)
         source = """
