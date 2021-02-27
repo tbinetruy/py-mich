@@ -562,7 +562,7 @@ class Compiler:
             get_storage_key_instr = e.records[e.types['__STORAGE__']].navigate_to_tree_leaf(storage_key_name)
             return load_storage_instr + get_storage_key_instr
         else:
-            return NotImplementedError
+            return self.compile_name(ast.Name(id='storage', ctx=ast.Load()), e)
 
     def check_get_storage(self, storage_get_ast: ast.Attribute) -> bool:
         try:
@@ -858,15 +858,15 @@ class Contract:
 
     def set_a(new_a: int) -> int:
         self.storage.a = new_a
-        return storage
+        return self.storage
 
     def set_b(new_b: int) -> int:
         self.storage.b = new_b
-        return storage
+        return self.storage
 
     def set_c(new_c: int) -> int:
         self.storage.c = new_c
-        return storage
+        return self.storage
         """
         vm = VM(isDebug=False)
         c = Compiler(source, isDebug=False)
@@ -902,15 +902,15 @@ class Contract:
         else:
             a = a + a
             self.storage.counter = self.storage.counter + a
-            return storage
+            return self.storage
 
     def update_owner(new_owner: address) -> int:
         self.storage.owner = new_owner
-        return storage
+        return self.storage
 
     def update_name(new_name: str) -> int:
         self.storage.name = new_name
-        return storage
+        return self.storage
         """
         c = Compiler(source, isDebug=False)
         c._compile(c.ast)
