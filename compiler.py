@@ -184,9 +184,55 @@ class Compiler:
         return [Comment(f"Reassigning {var_name.id} = {print_val}")] + instructions
 
     @debug
+    def compile_assign_storage_attribute(self, assign_ast: ast.Assign, e: Env) -> List[Instr]:
+        attribute_to_assign = assign_ast.targets[0].attr
+        attribute_names = e.records['Storage'].attribute_names
+
+        args = []
+        for attribute_name in attribute_names:
+            if attribute_name == attribute_to_assign:
+                args.append(assign_ast.value)
+            else:
+                args.append(
+                    ast.Attribute(
+                        value=ast.Attribute(
+                            value=ast.Name(id='self', ctx=ast.Load()),
+                            attr='storage',
+                            ctx=ast.Load(),
+                        ),
+                        attr=attribute_name,
+                        ctx=ast.Load(),
+                    ),
+                )
+
+        new_ast = ast.Assign(
+            targets=[
+                ast.Name(id='storage', ctx=ast.Load()),
+            ],
+            value=ast.Call(
+                func=ast.Name(id='Storage', ctx=ast.Load()),
+                args=args,
+                keywords=[]
+            ),
+            type_comment=None,
+        )
+        return self.compile_assign(new_ast, e)
+
+    @debug
     def compile_assign(self, assign: ast.Assign, e: Env) -> List[Instr]:
-        if assign.targets[0].id in e.vars.keys():
-            return self._compile_reassign(assign, e)
+        try:
+            cond1 = assign.targets[0].value.value.id == "self"
+            cond2 = assign.targets[0].value.attr == "storage"
+            if cond1 and cond2:
+                return self.compile_assign_storage_attribute(assign, e)
+        except:
+            pass
+
+        try:
+            if assign.targets[0].id in e.vars.keys():
+                return self._compile_reassign(assign, e)
+        except:
+            pass
 
         instructions: List[Instr] = []
         var_name = assign.targets[0]
@@ -798,7 +844,45 @@ my_storage # get storage
 
 
 class TestContract(unittest.TestCase):
+    def test_attribute_reassign(self):
+        source = """
+@dataclass
+class Storage:
+    a: int
+    b: int
+    c: int
+
+class Contract:
+    def deploy():
+        return Storage(1, 2, 3)
+
+    def set_a(new_a: int) -> int:
+        self.storage.a = new_a
+        return storage
+
+    def set_b(new_b: int) -> int:
+        self.storage.b = new_b
+        return storage
+
+    def set_c(new_c: int) -> int:
+        self.storage.c = new_c
+        return storage
+        """
+        vm = VM(isDebug=False)
+        c = Compiler(source, isDebug=False)
+        instructions = c._compile(c.ast)
+        vm.run_contract(c.contract, "set_a", 10)
+        self.assertEqual(c.contract.storage, Pair(Pair(10, 2), 3))
+
+        vm.run_contract(c.contract, "set_b", 20)
+        self.assertEqual(c.contract.storage, Pair(Pair(10, 20), 3))
+
+        vm.run_contract(c.contract, "set_c", 30)
+        self.assertEqual(c.contract.storage, Pair(Pair(10, 20), 30))
+
+
     def test_contract_final(self):
+
         vm = VM(isDebug=False)
         owner =  "tzaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         source = f"""
@@ -817,13 +901,16 @@ class Contract:
             raise 'input smaller than 10'
         else:
             a = a + a
-            return Storage(self.storage.owner, self.storage.name, self.storage.counter + a)
+            self.storage.counter = self.storage.counter + a
+            return storage
 
     def update_owner(new_owner: address) -> int:
-        return Storage(new_owner, self.storage.name, self.storage.counter)
+        self.storage.owner = new_owner
+        return storage
 
     def update_name(new_name: str) -> int:
-        return Storage(self.storage.owner, new_name, self.storage.counter)
+        self.storage.name = new_name
+        return storage
         """
         c = Compiler(source, isDebug=False)
         c._compile(c.ast)
