@@ -61,16 +61,18 @@ class TypeParser:
     def __init__(self):
         pass
 
-    def parse_name(self, name: ast.Name) -> Type:
+    def parse_name(self, name: ast.Name, e) -> Type:
         if name.id == 'int':
             return Int()
         if name.id == 'str':
             return String()
         if name.id == 'address':
             return Address()
+        if name.id in e.records.keys():
+            return e.records[name.id].get_type()
         raise NotImplementedError
 
-    def parse(self, type_ast) -> Type:
+    def parse(self, type_ast, e) -> Type:
         if type(type_ast) == ast.Name:
-            return self.parse_name(type_ast)
+            return self.parse_name(type_ast, e)
         raise NotImplementedError

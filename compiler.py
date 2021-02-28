@@ -358,10 +358,10 @@ class Compiler:
             e,
         )
 
-    def _get_function_prototype(self, f: ast.FunctionDef) -> FunctionPrototype:
+    def _get_function_prototype(self, f: ast.FunctionDef, e: Env) -> FunctionPrototype:
         return FunctionPrototype(
-            self.type_parser.parse(f.args.args[0].annotation),
-            self.type_parser.parse(f.returns),
+            self.type_parser.parse(f.args.args[0].annotation, e),
+            self.type_parser.parse(f.returns, e),
         )
 
     @debug
@@ -371,7 +371,11 @@ class Compiler:
         e.vars[f.name] = e.sp
         e.args[f.name] = f.args.args[0].arg
 
-        prototype = self._get_function_prototype(f)
+        # type argument
+        if f.args.args[0].annotation.id in e.records:
+            e.types[f.args.args[0].arg] = f.args.args[0].annotation.id
+
+        prototype = self._get_function_prototype(f, e)
         arg_type, return_type = prototype.arg_type, prototype.return_type
         # get init env keys
         init_var_names = set(e.vars.keys())
@@ -478,7 +482,7 @@ class Compiler:
         ]
 
         entrypoint_instructions = self._compile_block(f.body, e) + free_argument_instructions + free_storage_instructions + epilogue
-        prototype = self._get_function_prototype(f)
+        prototype = self._get_function_prototype(f, e)
         entrypoint = Entrypoint(prototype, entrypoint_instructions)
         self.contract.add_entrypoint(f.name, entrypoint)
         return []
@@ -548,7 +552,7 @@ class Compiler:
         attribute_names = [attr.target.id for attr in record_ast.body]
         attribute_types = []
         for attr in record_ast.body:
-            attribute_types.append(self.type_parser.parse(attr.annotation))
+            attribute_types.append(self.type_parser.parse(attr.annotation, e))
 
         e.records[record_ast.name] = Record(attribute_names, attribute_types)
         return []
@@ -1240,6 +1244,25 @@ else:
             assert 0
         except VMFailwithException:
             assert 1
+
+    def test_record_as_function_argument(self):
+        source = """
+@dataclass
+class Storage:
+    a: int
+    b: int
+    c: int
+
+def add(storage: Storage) -> int:
+    return storage.a + storage.b + storage.c
+
+add(Storage(1, 2, 3))
+        """
+        vm = VM(isDebug=False)
+        c = Compiler(source, isDebug=False)
+        instructions = c._compile(c.ast)
+        vm._run_instructions(instructions)
+        self.assertEqual(vm.stack[-1], 6)
 
 
 for TestSuite in [
