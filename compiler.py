@@ -852,6 +852,70 @@ my_storage # get storage
 
 
 class TestContract(unittest.TestCase):
+    def test_election(self):
+        admin =  "tzaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        source = f"""
+@dataclass
+class Storage:
+    admin: address
+    manifest_url: str
+    manifest_hash: str
+    open: str
+    close: str
+    artifacts_url: str
+    artifacts_hash: str
+
+@dataclass
+class OpenArg:
+    open: str
+    manifest_url: str
+    manifest_hash: str
+
+@dataclass
+class ArtifactsArg:
+    artifacts_url: str
+    artifacts_hash: str
+
+class Contract:
+    def deploy():
+        return Storage("{admin}", '', '', '', '', '', '')
+
+    def open(params: OpenArg) -> Storage:
+        self.storage.open = params.open
+        self.storage.manifest_url = params.manifest_url
+        self.storage.manifest_hash = params.manifest_hash
+
+        return self.storage
+
+    def close(params: str) -> Storage:
+        self.storage.close = params
+
+        return self.storage
+
+    def artifacts(params: ArtifactsArg) -> Storage:
+        self.storage.artifacts_url = params.artifacts_url
+        self.storage.artifacts_hash = params.artifacts_hash
+
+        return self.storage
+        """
+        vm = VM(isDebug=False)
+        c = Compiler(source, isDebug=False)
+        instructions = c._compile(c.ast)
+        vm.run_contract(c.contract, "open", Pair(Pair("foo", "bar"), "baz"))
+        comp = c
+        expected_storage = Pair(Pair(Pair(admin, 'bar'), Pair('baz', 'foo')), Pair(Pair('', ''), ''))
+        self.assertEqual(c.contract.storage, expected_storage)
+
+        vm.run_contract(c.contract, "close", "foobar")
+        comp = c
+        expected_storage = Pair(Pair(Pair(admin, 'bar'), Pair('baz', 'foo')), Pair(Pair('foobar', ''), ''))
+        self.assertEqual(c.contract.storage, expected_storage)
+
+        vm.run_contract(c.contract, "artifacts", Pair('foo', 'bar'))
+        comp = c
+        expected_storage = Pair(Pair(Pair(admin, 'bar'), Pair('baz', 'foo')), Pair(Pair('foobar', 'foo'), 'bar'))
+        self.assertEqual(c.contract.storage, expected_storage)
+
     def test_attribute_reassign(self):
         source = """
 @dataclass
