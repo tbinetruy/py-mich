@@ -468,6 +468,10 @@ class Compiler:
         e.vars["storage"] = 0
         e.vars[f.args.args[0].arg] = 1
 
+        # type argument
+        if f.args.args[0].annotation.id in e.records:
+            e.types[f.args.args[0].arg] = f.args.args[0].annotation.id
+
         free_argument_instructions = [
             Comment(f"Freeing argument at sp={e.vars[f.args.args[0].arg]}"),
             Instr("DIP", [1, [Instr("DROP", [], {})]], {}),
