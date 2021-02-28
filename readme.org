@@ -475,3 +475,77 @@ assert contract.storage() == 10
 conrtact.entrypoint_1(10).inject()  # incrementByTwo entrypoint
 assert contract.storage() == 12
 #+end_src
+
+* Pass 1: AST expansion
+
+** Class rewritting
+
+We'd like to implement classes by rewritting them to classless Python first and compiling the new AST rather than compiling classes to Michelson directly. The idea is to rewritte the following:
+
+#+begin_src python
+class User:
+   def __init__(a: int, b: str):
+        self.a, self.b = a, b
+
+    def method1(self, arg1: int, arg2: int) -> string:
+        self.a = arg1 + arg2
+        return "success"
+
+    def method2(self, arg1: str, arg2: str) -> None:
+        self.b = arg1 + arg2
+
+user = User(1, "yo")
+user.a = 10
+user.method1(1, 2)
+user.method2("yo", "lo")
+#+end_src
+
+As:
+
+#+begin_src python
+@dataclass 
+class __User_self:
+    a: int
+    b: str
+
+def __User___init__(a: int, b:str):
+    return __User_self(a, b)
+
+def __User_method1(self: __User_self, arg1: int, arg2: int) -> Tuple[__User_self, str]:
+    self.a = arg1 + arg2
+    return self, "success"
+
+def __User_method2(self: __User_self, arg1: int, arg2: int) -> __User_self:
+    self.b = arg1 + arg2
+    return self
+
+user = __User___init__(1, "yo")
+user.a = 10
+user = _User_method1(user, 1, 2)[0]
+user = _User_method2(user, "yo", "lo")
+#+end_src
+
+** Closures
+
+Similarly, closures can be compiled without touching the Michelson generator by simply rewritting the Python to « closureless » code. We want to transform:
+
+#+begin_src python
+a = "foo"
+b = 1
+c = 2
+def f(d: int) -> int
+    return len(a) + b + d
+d = f(2) + c
+#+end_src
+
+Into:
+
+#+begin_src python
+a = "foo"
+b = 1
+def (a: str, b: int, d: int) -> int
+    return len(a) + b + d
+d = f(a, b, 2) + c
+#+end_src
+
+This will ensure that the variables used from the closure are always at the same position on the stack relative to the function body.
