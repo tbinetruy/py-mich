@@ -9,422 +9,7 @@ We'd like to compile Python code to Tezos' Micelson bytecode using Python's  ~as
 
 * Usage
 
-So far, only number variables and additions have been implemented in the compiler :D I'll update the readme as things evolve.
-
-Here is an example of how to declare and call functions and variables. For a more complex example, with nest functions and closures, have a look at ~main.py~
-
-#+begin_src python :exports both :results output
-from vm import VM
-from compiler import Compiler
-
-vm = VM(isDebug=True)
-source = "baz = 1 \ndef foo(a): \n    b = 2 \n    return a + b + 3 \nbar = foo(baz) \nfff = foo(bar) \nfoo(foo(bar))"""
-c = Compiler(source, isDebug=False)
-instructions = c.compile(c.ast)
-
-log = lambda msg: print(f"\n*** {msg}\n")
-log("SOURCES")
-print(source)
-
-log("EXECUTION")
-# Leaves us with the following VM state:
-# ("S: [1, '[func]', 6, 11, ('*', 16)] ; sp: ", '4')
-vm._run_instructions(instructions)
-#+end_src
-
-#+RESULTS:
-#+begin_example
-
-*** SOURCES
-
-baz = 1 
-def foo(a): 
-    b = 2 
-    return a + b + 3 
-bar = foo(baz) 
-fff = foo(bar) 
-foo(foo(bar))
-
-*** EXECUTION
-
-===  COMMENT ['baz = 1'] {}  ===
-('S: [] ; sp: ', '-1')
-('S: [] ; sp: ', '-1')
-===  PUSH [1] {}  ===
-('S: [] ; sp: ', '-1')
-("S: [('*', 1)] ; sp: ", '0')
-===  COMMENT ['Storing function foo at 1'] {}  ===
-("S: [('*', 1)] ; sp: ", '0')
-("S: [('*', 1)] ; sp: ", '0')
-===  PUSH [[Instr(name='COMMENT', args=['b = 2'], kwargs={}), Instr(name='PUSH', args=[2], kwargs={}), Instr(name='COMMENT', args=['Loading a at 2, e.sp = 3, jump = 1'], kwargs={}), Instr(name='DIP', args=[1], kwargs={}), Instr(name='DUP', args=[], kwargs={}), Instr(name='DIG', args=[1], kwargs={}), Instr(name='COMMENT', args=['Loading b at 3, e.sp = 4, jump = 1'], kwargs={}), Instr(name='DIP', args=[1], kwargs={}), Instr(name='DUP', args=[], kwargs={}), Instr(name='DIG', args=[1], kwargs={}), Instr(name='ADD', args=[], kwargs={}), Instr(name='PUSH', args=[3], kwargs={}), Instr(name='ADD', args=[], kwargs={}), Instr(name='COMMENT', args=['Freeing var b at 3'], kwargs={}), Instr(name='DIP', args=[1], kwargs={}), Instr(name='DROP', args=[], kwargs={}), Instr(name='IIP', args=[1], kwargs={}), Instr(name='COMMENT', args=['Freeing var a at 2'], kwargs={}), Instr(name='DIP', args=[1], kwargs={}), Instr(name='DROP', args=[], kwargs={}), Instr(name='IIP', args=[1], kwargs={})]] {}  ===
-("S: [('*', 1)] ; sp: ", '0')
-("S: [1, ('*', '[func]')] ; sp: ", '1')
-===  COMMENT ['bar = [object]'] {}  ===
-("S: [1, ('*', '[func]')] ; sp: ", '1')
-("S: [1, ('*', '[func]')] ; sp: ", '1')
-===  COMMENT ['Moving to function foo at 1, e.sp = 1'] {}  ===
-("S: [1, ('*', '[func]')] ; sp: ", '1')
-("S: [1, ('*', '[func]')] ; sp: ", '1')
-===  DIP [0] {}  ===
-("S: [1, ('*', '[func]')] ; sp: ", '1')
-("S: [1, ('*', '[func]')] ; sp: ", '1')
-===  COMMENT ['Loading baz at 0, e.sp = 1, jump = 1'] {}  ===
-("S: [1, ('*', '[func]')] ; sp: ", '1')
-("S: [1, ('*', '[func]')] ; sp: ", '1')
-===  DIP [1] {}  ===
-("S: [1, ('*', '[func]')] ; sp: ", '1')
-("S: [('*', 1), '[func]'] ; sp: ", '0')
-===  DUP [] {}  ===
-("S: [('*', 1), '[func]'] ; sp: ", '0')
-("S: [1, ('*', 1), '[func]'] ; sp: ", '1')
-===  DIG [1] {}  ===
-("S: [1, ('*', 1), '[func]'] ; sp: ", '1')
-("S: [1, '[func]', ('*', 1)] ; sp: ", '2')
-===  COMMENT ['Executing function foo at 1'] {}  ===
-("S: [1, '[func]', ('*', 1)] ; sp: ", '2')
-("S: [1, '[func]', ('*', 1)] ; sp: ", '2')
-===  EXEC [] {}  ===
-("S: [1, '[func]', ('*', 1)] ; sp: ", '2')
-@@@@@@@ Start executing function @@@@@@@
-===  COMMENT ['b = 2'] {}  ===
-("S: [1, '[func]', ('*', 1)] ; sp: ", '2')
-("S: [1, '[func]', ('*', 1)] ; sp: ", '2')
-===  PUSH [2] {}  ===
-("S: [1, '[func]', ('*', 1)] ; sp: ", '2')
-("S: [1, '[func]', 1, ('*', 2)] ; sp: ", '3')
-===  COMMENT ['Loading a at 2, e.sp = 3, jump = 1'] {}  ===
-("S: [1, '[func]', 1, ('*', 2)] ; sp: ", '3')
-("S: [1, '[func]', 1, ('*', 2)] ; sp: ", '3')
-===  DIP [1] {}  ===
-("S: [1, '[func]', 1, ('*', 2)] ; sp: ", '3')
-("S: [1, '[func]', ('*', 1), 2] ; sp: ", '2')
-===  DUP [] {}  ===
-("S: [1, '[func]', ('*', 1), 2] ; sp: ", '2')
-("S: [1, '[func]', 1, ('*', 1), 2] ; sp: ", '3')
-===  DIG [1] {}  ===
-("S: [1, '[func]', 1, ('*', 1), 2] ; sp: ", '3')
-("S: [1, '[func]', 1, 2, ('*', 1)] ; sp: ", '4')
-===  COMMENT ['Loading b at 3, e.sp = 4, jump = 1'] {}  ===
-("S: [1, '[func]', 1, 2, ('*', 1)] ; sp: ", '4')
-("S: [1, '[func]', 1, 2, ('*', 1)] ; sp: ", '4')
-===  DIP [1] {}  ===
-("S: [1, '[func]', 1, 2, ('*', 1)] ; sp: ", '4')
-("S: [1, '[func]', 1, ('*', 2), 1] ; sp: ", '3')
-===  DUP [] {}  ===
-("S: [1, '[func]', 1, ('*', 2), 1] ; sp: ", '3')
-("S: [1, '[func]', 1, 2, ('*', 2), 1] ; sp: ", '4')
-===  DIG [1] {}  ===
-("S: [1, '[func]', 1, 2, ('*', 2), 1] ; sp: ", '4')
-("S: [1, '[func]', 1, 2, 1, ('*', 2)] ; sp: ", '5')
-===  ADD [] {}  ===
-("S: [1, '[func]', 1, 2, 1, ('*', 2)] ; sp: ", '5')
-("S: [1, '[func]', 1, 2, ('*', 3)] ; sp: ", '4')
-===  PUSH [3] {}  ===
-("S: [1, '[func]', 1, 2, ('*', 3)] ; sp: ", '4')
-("S: [1, '[func]', 1, 2, 3, ('*', 3)] ; sp: ", '5')
-===  ADD [] {}  ===
-("S: [1, '[func]', 1, 2, 3, ('*', 3)] ; sp: ", '5')
-("S: [1, '[func]', 1, 2, ('*', 6)] ; sp: ", '4')
-===  COMMENT ['Freeing var b at 3'] {}  ===
-("S: [1, '[func]', 1, 2, ('*', 6)] ; sp: ", '4')
-("S: [1, '[func]', 1, 2, ('*', 6)] ; sp: ", '4')
-===  DIP [1] {}  ===
-("S: [1, '[func]', 1, 2, ('*', 6)] ; sp: ", '4')
-("S: [1, '[func]', 1, ('*', 2), 6] ; sp: ", '3')
-===  DROP [] {}  ===
-("S: [1, '[func]', 1, ('*', 2), 6] ; sp: ", '3')
-("S: [1, '[func]', ('*', 1), 6] ; sp: ", '2')
-===  IIP [1] {}  ===
-("S: [1, '[func]', ('*', 1), 6] ; sp: ", '2')
-("S: [1, '[func]', 1, ('*', 6)] ; sp: ", '3')
-===  COMMENT ['Freeing var a at 2'] {}  ===
-("S: [1, '[func]', 1, ('*', 6)] ; sp: ", '3')
-("S: [1, '[func]', 1, ('*', 6)] ; sp: ", '3')
-===  DIP [1] {}  ===
-("S: [1, '[func]', 1, ('*', 6)] ; sp: ", '3')
-("S: [1, '[func]', ('*', 1), 6] ; sp: ", '2')
-===  DROP [] {}  ===
-("S: [1, '[func]', ('*', 1), 6] ; sp: ", '2')
-("S: [1, ('*', '[func]'), 6] ; sp: ", '1')
-===  IIP [1] {}  ===
-("S: [1, ('*', '[func]'), 6] ; sp: ", '1')
-("S: [1, '[func]', ('*', 6)] ; sp: ", '2')
-@@@@@@@ End executing function @@@@@@@
-("S: [1, '[func]', ('*', 6)] ; sp: ", '2')
-===  DIG [0] {}  ===
-("S: [1, '[func]', ('*', 6)] ; sp: ", '2')
-("S: [1, '[func]', ('*', 6)] ; sp: ", '2')
-===  COMMENT ['fff = [object]'] {}  ===
-("S: [1, '[func]', ('*', 6)] ; sp: ", '2')
-("S: [1, '[func]', ('*', 6)] ; sp: ", '2')
-===  COMMENT ['Moving to function foo at 1, e.sp = 2'] {}  ===
-("S: [1, '[func]', ('*', 6)] ; sp: ", '2')
-("S: [1, '[func]', ('*', 6)] ; sp: ", '2')
-===  DIP [1] {}  ===
-("S: [1, '[func]', ('*', 6)] ; sp: ", '2')
-("S: [1, ('*', '[func]'), 6] ; sp: ", '1')
-===  COMMENT ['Loading bar at 2, e.sp = 1, jump = -1'] {}  ===
-("S: [1, ('*', '[func]'), 6] ; sp: ", '1')
-("S: [1, ('*', '[func]'), 6] ; sp: ", '1')
-===  DIP [-1] {}  ===
-("S: [1, ('*', '[func]'), 6] ; sp: ", '1')
-("S: [1, '[func]', ('*', 6)] ; sp: ", '2')
-===  DUP [] {}  ===
-("S: [1, '[func]', ('*', 6)] ; sp: ", '2')
-("S: [1, '[func]', 6, ('*', 6)] ; sp: ", '3')
-===  DIG [-1] {}  ===
-("S: [1, '[func]', 6, ('*', 6)] ; sp: ", '3')
-("S: [1, '[func]', ('*', 6), 6] ; sp: ", '2')
-===  COMMENT ['Executing function foo at 1'] {}  ===
-("S: [1, '[func]', ('*', 6), 6] ; sp: ", '2')
-("S: [1, '[func]', ('*', 6), 6] ; sp: ", '2')
-===  EXEC [] {}  ===
-("S: [1, '[func]', ('*', 6), 6] ; sp: ", '2')
-@@@@@@@ Start executing function @@@@@@@
-===  COMMENT ['b = 2'] {}  ===
-("S: [1, '[func]', ('*', 6), 6] ; sp: ", '2')
-("S: [1, '[func]', ('*', 6), 6] ; sp: ", '2')
-===  PUSH [2] {}  ===
-("S: [1, '[func]', ('*', 6), 6] ; sp: ", '2')
-("S: [1, '[func]', 6, ('*', 2), 6] ; sp: ", '3')
-===  COMMENT ['Loading a at 2, e.sp = 3, jump = 1'] {}  ===
-("S: [1, '[func]', 6, ('*', 2), 6] ; sp: ", '3')
-("S: [1, '[func]', 6, ('*', 2), 6] ; sp: ", '3')
-===  DIP [1] {}  ===
-("S: [1, '[func]', 6, ('*', 2), 6] ; sp: ", '3')
-("S: [1, '[func]', ('*', 6), 2, 6] ; sp: ", '2')
-===  DUP [] {}  ===
-("S: [1, '[func]', ('*', 6), 2, 6] ; sp: ", '2')
-("S: [1, '[func]', 6, ('*', 6), 2, 6] ; sp: ", '3')
-===  DIG [1] {}  ===
-("S: [1, '[func]', 6, ('*', 6), 2, 6] ; sp: ", '3')
-("S: [1, '[func]', 6, 2, ('*', 6), 6] ; sp: ", '4')
-===  COMMENT ['Loading b at 3, e.sp = 4, jump = 1'] {}  ===
-("S: [1, '[func]', 6, 2, ('*', 6), 6] ; sp: ", '4')
-("S: [1, '[func]', 6, 2, ('*', 6), 6] ; sp: ", '4')
-===  DIP [1] {}  ===
-("S: [1, '[func]', 6, 2, ('*', 6), 6] ; sp: ", '4')
-("S: [1, '[func]', 6, ('*', 2), 6, 6] ; sp: ", '3')
-===  DUP [] {}  ===
-("S: [1, '[func]', 6, ('*', 2), 6, 6] ; sp: ", '3')
-("S: [1, '[func]', 6, 2, ('*', 2), 6, 6] ; sp: ", '4')
-===  DIG [1] {}  ===
-("S: [1, '[func]', 6, 2, ('*', 2), 6, 6] ; sp: ", '4')
-("S: [1, '[func]', 6, 2, 6, ('*', 2), 6] ; sp: ", '5')
-===  ADD [] {}  ===
-("S: [1, '[func]', 6, 2, 6, ('*', 2), 6] ; sp: ", '5')
-("S: [1, '[func]', 6, 2, ('*', 8), 6] ; sp: ", '4')
-===  PUSH [3] {}  ===
-("S: [1, '[func]', 6, 2, ('*', 8), 6] ; sp: ", '4')
-("S: [1, '[func]', 6, 2, 8, ('*', 3), 6] ; sp: ", '5')
-===  ADD [] {}  ===
-("S: [1, '[func]', 6, 2, 8, ('*', 3), 6] ; sp: ", '5')
-("S: [1, '[func]', 6, 2, ('*', 11), 6] ; sp: ", '4')
-===  COMMENT ['Freeing var b at 3'] {}  ===
-("S: [1, '[func]', 6, 2, ('*', 11), 6] ; sp: ", '4')
-("S: [1, '[func]', 6, 2, ('*', 11), 6] ; sp: ", '4')
-===  DIP [1] {}  ===
-("S: [1, '[func]', 6, 2, ('*', 11), 6] ; sp: ", '4')
-("S: [1, '[func]', 6, ('*', 2), 11, 6] ; sp: ", '3')
-===  DROP [] {}  ===
-("S: [1, '[func]', 6, ('*', 2), 11, 6] ; sp: ", '3')
-("S: [1, '[func]', ('*', 6), 11, 6] ; sp: ", '2')
-===  IIP [1] {}  ===
-("S: [1, '[func]', ('*', 6), 11, 6] ; sp: ", '2')
-("S: [1, '[func]', 6, ('*', 11), 6] ; sp: ", '3')
-===  COMMENT ['Freeing var a at 2'] {}  ===
-("S: [1, '[func]', 6, ('*', 11), 6] ; sp: ", '3')
-("S: [1, '[func]', 6, ('*', 11), 6] ; sp: ", '3')
-===  DIP [1] {}  ===
-("S: [1, '[func]', 6, ('*', 11), 6] ; sp: ", '3')
-("S: [1, '[func]', ('*', 6), 11, 6] ; sp: ", '2')
-===  DROP [] {}  ===
-("S: [1, '[func]', ('*', 6), 11, 6] ; sp: ", '2')
-("S: [1, ('*', '[func]'), 11, 6] ; sp: ", '1')
-===  IIP [1] {}  ===
-("S: [1, ('*', '[func]'), 11, 6] ; sp: ", '1')
-("S: [1, '[func]', ('*', 11), 6] ; sp: ", '2')
-@@@@@@@ End executing function @@@@@@@
-("S: [1, '[func]', ('*', 11), 6] ; sp: ", '2')
-===  DIG [1] {}  ===
-("S: [1, '[func]', ('*', 11), 6] ; sp: ", '2')
-("S: [1, '[func]', 6, ('*', 11)] ; sp: ", '3')
-===  COMMENT ['Moving to function foo at 1, e.sp = 3'] {}  ===
-("S: [1, '[func]', 6, ('*', 11)] ; sp: ", '3')
-("S: [1, '[func]', 6, ('*', 11)] ; sp: ", '3')
-===  DIP [2] {}  ===
-("S: [1, '[func]', 6, ('*', 11)] ; sp: ", '3')
-("S: [1, ('*', '[func]'), 6, 11] ; sp: ", '1')
-===  COMMENT ['Moving to function foo at 1, e.sp = 1'] {}  ===
-("S: [1, ('*', '[func]'), 6, 11] ; sp: ", '1')
-("S: [1, ('*', '[func]'), 6, 11] ; sp: ", '1')
-===  DIP [0] {}  ===
-("S: [1, ('*', '[func]'), 6, 11] ; sp: ", '1')
-("S: [1, ('*', '[func]'), 6, 11] ; sp: ", '1')
-===  COMMENT ['Loading bar at 2, e.sp = 1, jump = -1'] {}  ===
-("S: [1, ('*', '[func]'), 6, 11] ; sp: ", '1')
-("S: [1, ('*', '[func]'), 6, 11] ; sp: ", '1')
-===  DIP [-1] {}  ===
-("S: [1, ('*', '[func]'), 6, 11] ; sp: ", '1')
-("S: [1, '[func]', ('*', 6), 11] ; sp: ", '2')
-===  DUP [] {}  ===
-("S: [1, '[func]', ('*', 6), 11] ; sp: ", '2')
-("S: [1, '[func]', 6, ('*', 6), 11] ; sp: ", '3')
-===  DIG [-1] {}  ===
-("S: [1, '[func]', 6, ('*', 6), 11] ; sp: ", '3')
-("S: [1, '[func]', ('*', 6), 6, 11] ; sp: ", '2')
-===  COMMENT ['Executing function foo at 1'] {}  ===
-("S: [1, '[func]', ('*', 6), 6, 11] ; sp: ", '2')
-("S: [1, '[func]', ('*', 6), 6, 11] ; sp: ", '2')
-===  EXEC [] {}  ===
-("S: [1, '[func]', ('*', 6), 6, 11] ; sp: ", '2')
-@@@@@@@ Start executing function @@@@@@@
-===  COMMENT ['b = 2'] {}  ===
-("S: [1, '[func]', ('*', 6), 6, 11] ; sp: ", '2')
-("S: [1, '[func]', ('*', 6), 6, 11] ; sp: ", '2')
-===  PUSH [2] {}  ===
-("S: [1, '[func]', ('*', 6), 6, 11] ; sp: ", '2')
-("S: [1, '[func]', 6, ('*', 2), 6, 11] ; sp: ", '3')
-===  COMMENT ['Loading a at 2, e.sp = 3, jump = 1'] {}  ===
-("S: [1, '[func]', 6, ('*', 2), 6, 11] ; sp: ", '3')
-("S: [1, '[func]', 6, ('*', 2), 6, 11] ; sp: ", '3')
-===  DIP [1] {}  ===
-("S: [1, '[func]', 6, ('*', 2), 6, 11] ; sp: ", '3')
-("S: [1, '[func]', ('*', 6), 2, 6, 11] ; sp: ", '2')
-===  DUP [] {}  ===
-("S: [1, '[func]', ('*', 6), 2, 6, 11] ; sp: ", '2')
-("S: [1, '[func]', 6, ('*', 6), 2, 6, 11] ; sp: ", '3')
-===  DIG [1] {}  ===
-("S: [1, '[func]', 6, ('*', 6), 2, 6, 11] ; sp: ", '3')
-("S: [1, '[func]', 6, 2, ('*', 6), 6, 11] ; sp: ", '4')
-===  COMMENT ['Loading b at 3, e.sp = 4, jump = 1'] {}  ===
-("S: [1, '[func]', 6, 2, ('*', 6), 6, 11] ; sp: ", '4')
-("S: [1, '[func]', 6, 2, ('*', 6), 6, 11] ; sp: ", '4')
-===  DIP [1] {}  ===
-("S: [1, '[func]', 6, 2, ('*', 6), 6, 11] ; sp: ", '4')
-("S: [1, '[func]', 6, ('*', 2), 6, 6, 11] ; sp: ", '3')
-===  DUP [] {}  ===
-("S: [1, '[func]', 6, ('*', 2), 6, 6, 11] ; sp: ", '3')
-("S: [1, '[func]', 6, 2, ('*', 2), 6, 6, 11] ; sp: ", '4')
-===  DIG [1] {}  ===
-("S: [1, '[func]', 6, 2, ('*', 2), 6, 6, 11] ; sp: ", '4')
-("S: [1, '[func]', 6, 2, 6, ('*', 2), 6, 11] ; sp: ", '5')
-===  ADD [] {}  ===
-("S: [1, '[func]', 6, 2, 6, ('*', 2), 6, 11] ; sp: ", '5')
-("S: [1, '[func]', 6, 2, ('*', 8), 6, 11] ; sp: ", '4')
-===  PUSH [3] {}  ===
-("S: [1, '[func]', 6, 2, ('*', 8), 6, 11] ; sp: ", '4')
-("S: [1, '[func]', 6, 2, 8, ('*', 3), 6, 11] ; sp: ", '5')
-===  ADD [] {}  ===
-("S: [1, '[func]', 6, 2, 8, ('*', 3), 6, 11] ; sp: ", '5')
-("S: [1, '[func]', 6, 2, ('*', 11), 6, 11] ; sp: ", '4')
-===  COMMENT ['Freeing var b at 3'] {}  ===
-("S: [1, '[func]', 6, 2, ('*', 11), 6, 11] ; sp: ", '4')
-("S: [1, '[func]', 6, 2, ('*', 11), 6, 11] ; sp: ", '4')
-===  DIP [1] {}  ===
-("S: [1, '[func]', 6, 2, ('*', 11), 6, 11] ; sp: ", '4')
-("S: [1, '[func]', 6, ('*', 2), 11, 6, 11] ; sp: ", '3')
-===  DROP [] {}  ===
-("S: [1, '[func]', 6, ('*', 2), 11, 6, 11] ; sp: ", '3')
-("S: [1, '[func]', ('*', 6), 11, 6, 11] ; sp: ", '2')
-===  IIP [1] {}  ===
-("S: [1, '[func]', ('*', 6), 11, 6, 11] ; sp: ", '2')
-("S: [1, '[func]', 6, ('*', 11), 6, 11] ; sp: ", '3')
-===  COMMENT ['Freeing var a at 2'] {}  ===
-("S: [1, '[func]', 6, ('*', 11), 6, 11] ; sp: ", '3')
-("S: [1, '[func]', 6, ('*', 11), 6, 11] ; sp: ", '3')
-===  DIP [1] {}  ===
-("S: [1, '[func]', 6, ('*', 11), 6, 11] ; sp: ", '3')
-("S: [1, '[func]', ('*', 6), 11, 6, 11] ; sp: ", '2')
-===  DROP [] {}  ===
-("S: [1, '[func]', ('*', 6), 11, 6, 11] ; sp: ", '2')
-("S: [1, ('*', '[func]'), 11, 6, 11] ; sp: ", '1')
-===  IIP [1] {}  ===
-("S: [1, ('*', '[func]'), 11, 6, 11] ; sp: ", '1')
-("S: [1, '[func]', ('*', 11), 6, 11] ; sp: ", '2')
-@@@@@@@ End executing function @@@@@@@
-("S: [1, '[func]', ('*', 11), 6, 11] ; sp: ", '2')
-===  DIG [0] {}  ===
-("S: [1, '[func]', ('*', 11), 6, 11] ; sp: ", '2')
-("S: [1, '[func]', ('*', 11), 6, 11] ; sp: ", '2')
-===  COMMENT ['Executing function foo at 1'] {}  ===
-("S: [1, '[func]', ('*', 11), 6, 11] ; sp: ", '2')
-("S: [1, '[func]', ('*', 11), 6, 11] ; sp: ", '2')
-===  EXEC [] {}  ===
-("S: [1, '[func]', ('*', 11), 6, 11] ; sp: ", '2')
-@@@@@@@ Start executing function @@@@@@@
-===  COMMENT ['b = 2'] {}  ===
-("S: [1, '[func]', ('*', 11), 6, 11] ; sp: ", '2')
-("S: [1, '[func]', ('*', 11), 6, 11] ; sp: ", '2')
-===  PUSH [2] {}  ===
-("S: [1, '[func]', ('*', 11), 6, 11] ; sp: ", '2')
-("S: [1, '[func]', 11, ('*', 2), 6, 11] ; sp: ", '3')
-===  COMMENT ['Loading a at 2, e.sp = 3, jump = 1'] {}  ===
-("S: [1, '[func]', 11, ('*', 2), 6, 11] ; sp: ", '3')
-("S: [1, '[func]', 11, ('*', 2), 6, 11] ; sp: ", '3')
-===  DIP [1] {}  ===
-("S: [1, '[func]', 11, ('*', 2), 6, 11] ; sp: ", '3')
-("S: [1, '[func]', ('*', 11), 2, 6, 11] ; sp: ", '2')
-===  DUP [] {}  ===
-("S: [1, '[func]', ('*', 11), 2, 6, 11] ; sp: ", '2')
-("S: [1, '[func]', 11, ('*', 11), 2, 6, 11] ; sp: ", '3')
-===  DIG [1] {}  ===
-("S: [1, '[func]', 11, ('*', 11), 2, 6, 11] ; sp: ", '3')
-("S: [1, '[func]', 11, 2, ('*', 11), 6, 11] ; sp: ", '4')
-===  COMMENT ['Loading b at 3, e.sp = 4, jump = 1'] {}  ===
-("S: [1, '[func]', 11, 2, ('*', 11), 6, 11] ; sp: ", '4')
-("S: [1, '[func]', 11, 2, ('*', 11), 6, 11] ; sp: ", '4')
-===  DIP [1] {}  ===
-("S: [1, '[func]', 11, 2, ('*', 11), 6, 11] ; sp: ", '4')
-("S: [1, '[func]', 11, ('*', 2), 11, 6, 11] ; sp: ", '3')
-===  DUP [] {}  ===
-("S: [1, '[func]', 11, ('*', 2), 11, 6, 11] ; sp: ", '3')
-("S: [1, '[func]', 11, 2, ('*', 2), 11, 6, 11] ; sp: ", '4')
-===  DIG [1] {}  ===
-("S: [1, '[func]', 11, 2, ('*', 2), 11, 6, 11] ; sp: ", '4')
-("S: [1, '[func]', 11, 2, 11, ('*', 2), 6, 11] ; sp: ", '5')
-===  ADD [] {}  ===
-("S: [1, '[func]', 11, 2, 11, ('*', 2), 6, 11] ; sp: ", '5')
-("S: [1, '[func]', 11, 2, ('*', 13), 6, 11] ; sp: ", '4')
-===  PUSH [3] {}  ===
-("S: [1, '[func]', 11, 2, ('*', 13), 6, 11] ; sp: ", '4')
-("S: [1, '[func]', 11, 2, 13, ('*', 3), 6, 11] ; sp: ", '5')
-===  ADD [] {}  ===
-("S: [1, '[func]', 11, 2, 13, ('*', 3), 6, 11] ; sp: ", '5')
-("S: [1, '[func]', 11, 2, ('*', 16), 6, 11] ; sp: ", '4')
-===  COMMENT ['Freeing var b at 3'] {}  ===
-("S: [1, '[func]', 11, 2, ('*', 16), 6, 11] ; sp: ", '4')
-("S: [1, '[func]', 11, 2, ('*', 16), 6, 11] ; sp: ", '4')
-===  DIP [1] {}  ===
-("S: [1, '[func]', 11, 2, ('*', 16), 6, 11] ; sp: ", '4')
-("S: [1, '[func]', 11, ('*', 2), 16, 6, 11] ; sp: ", '3')
-===  DROP [] {}  ===
-("S: [1, '[func]', 11, ('*', 2), 16, 6, 11] ; sp: ", '3')
-("S: [1, '[func]', ('*', 11), 16, 6, 11] ; sp: ", '2')
-===  IIP [1] {}  ===
-("S: [1, '[func]', ('*', 11), 16, 6, 11] ; sp: ", '2')
-("S: [1, '[func]', 11, ('*', 16), 6, 11] ; sp: ", '3')
-===  COMMENT ['Freeing var a at 2'] {}  ===
-("S: [1, '[func]', 11, ('*', 16), 6, 11] ; sp: ", '3')
-("S: [1, '[func]', 11, ('*', 16), 6, 11] ; sp: ", '3')
-===  DIP [1] {}  ===
-("S: [1, '[func]', 11, ('*', 16), 6, 11] ; sp: ", '3')
-("S: [1, '[func]', ('*', 11), 16, 6, 11] ; sp: ", '2')
-===  DROP [] {}  ===
-("S: [1, '[func]', ('*', 11), 16, 6, 11] ; sp: ", '2')
-("S: [1, ('*', '[func]'), 16, 6, 11] ; sp: ", '1')
-===  IIP [1] {}  ===
-("S: [1, ('*', '[func]'), 16, 6, 11] ; sp: ", '1')
-("S: [1, '[func]', ('*', 16), 6, 11] ; sp: ", '2')
-@@@@@@@ End executing function @@@@@@@
-("S: [1, '[func]', ('*', 16), 6, 11] ; sp: ", '2')
-===  DIG [2] {}  ===
-("S: [1, '[func]', ('*', 16), 6, 11] ; sp: ", '2')
-("S: [1, '[func]', 6, 11, ('*', 16)] ; sp: ", '4')
-#+end_example
-
-
-* Deploy on sandbox
+** Deploy on sandbox
 
 Compile contract:
 
@@ -433,13 +18,48 @@ from compiler import Compiler
 import json
 
 source = """
-class Contract:
-    def incrementByTwo(a: int) -> int:
-        b = 1
-        return a + b + 1
+@dataclass
+class Storage:
+    admin: address
+    manifest_url: str
+    manifest_hash: str
+    open: str
+    close: str
+    artifacts_url: str
+    artifacts_hash: str
 
-    def bar(b: int) -> int:
-        return b
+@dataclass
+class OpenArg:
+    open: str
+    manifest_url: str
+    manifest_hash: str
+
+@dataclass
+class ArtifactsArg:
+    artifacts_url: str
+    artifacts_hash: str
+
+class Contract:
+    def deploy():
+        return Storage("tz1VSUr8wwNhLAzempoch5d6hLRiTh8Cjcjb", '', '', '', '', '', '')
+
+    def open(params: OpenArg) -> Storage:
+        self.storage.open = params.open
+        self.storage.manifest_url = params.manifest_url
+        self.storage.manifest_hash = params.manifest_hash
+
+        return self.storage
+
+    def close(params: str) -> Storage:
+        self.storage.close = params
+
+        return self.storage
+
+    def artifacts(params: ArtifactsArg) -> Storage:
+        self.storage.artifacts_url = params.artifacts_url
+        self.storage.artifacts_hash = params.artifacts_hash
+
+        return self.storage
 """
 contract = Compiler(source).compile().contract
 micheline = CompilerBackend().compile_contract(contract)
@@ -460,20 +80,109 @@ client = pytezos.using(key=key, shell=sandbox_url)
 from pytezos import Contract
 
 with open("my_contract.json") as f:
-    text = f.read()
+    source = f.read()
 
 import json
-foo = json.loads(text)
-operation = client.origination(dict(code=foo, storage={"int": "1"})).autofill().sign().inject()
+from pytezos import ContractInterface
+micheline = json.loads(source)
+ci = ContractInterface.from_micheline(micheline)
+
+init_storage = {'prim': 'Pair', 'args': [{'prim': 'Pair', 'args': [{'prim': 'Pair', 'args': [{'string': 'tz1VSUr8wwNhLAzempoch5d6hLRiTh8Cjcjb'}, {'string': ''}]}, {'string': ''}, {'string': ''}]}, {'prim': 'Pair', 'args': [{'string': ''}, {'string': ''}]}, {'string': ''}]}
+
+operation = client.origination(dict(code=micheline, storage=init_storage)).autofill().sign().inject()
 result = client.shell.blocks[-200:].find_operation(operation['hash'])
 contract_id = result['contents'][0]['metadata']['operation_result']['originated_contracts'][0]
 contract = client.contract(contract_id)
+#+end_src
 
-assert conrtact.storage() == 1
-contract.entrypoint_0(10).inject()  # bar entrypoint
-assert contract.storage() == 10
-conrtact.entrypoint_1(10).inject()  # incrementByTwo entrypoint
-assert contract.storage() == 12
+We can now interact with the contract, let's list its entrypoints:
+
+#+begin_src python
+contract
+#+end_src
+
+#+begin_src
+[...]
+
+Entrypoints
+.artifacts()
+.close()
+.open()
+.default()
+
+[...]
+#+end_src
+
+We can inspect the storage type:
+
+#+begin_src python
+contract.storage
+#+end_src
+
+#+begin_src python
+[...]
+
+Typedef
+$storage:
+  {
+    "admin": address,
+    "manifest_url": string,
+    "manifest_hash": string,
+    "open": string,
+    "close": string,
+    "artifacts_url": string,
+    "artifacts_hash": string
+  }
+
+[...]
+#+end_src
+
+As well as the storage value:
+
+#+begin_src python
+contract.storage()
+#+end_src
+
+#+begin_src python
+{'admin': 'tz1VSUr8wwNhLAzempoch5d6hLRiTh8Cjcjb', 'manifest_url': '', 'manifest_hash': '', 'open': '', 'close': '', 'artifacts_url': '', 'artifacts_hash': ''}
+#+end_src
+
+We can see what the entrypoint type is:
+
+#+begin_src python
+contract.open
+#+end_src
+
+#+begin_src python
+[...]
+
+Typedef
+$open:
+	{
+	  "open": string,
+	  "manifest_url": string,
+	  "manifest_hash": string
+	}
+
+[...]
+#+end_src
+
+And call it seemlessly:
+
+#+begin_src python
+contract.open("4-mar-21", "http://my_manifest", "134AUIE134EI").inject()
+#+end_src
+
+#+begin_src python
+[...]
+#+end_src
+
+#+begin_src python
+contract.storage()
+#+end_src
+
+#+begin_src python
+{'admin': 'tz1VSUr8wwNhLAzempoch5d6hLRiTh8Cjcjb', 'manifest_url': 'http://my_manifest', 'manifest_hash': '134AUIE134EI', 'open': '4-mar-21', 'close': '', 'artifacts_url': '', 'artifacts_hash': ''}
 #+end_src
 
 * Pass 1: AST expansion
