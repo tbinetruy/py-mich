@@ -2,7 +2,7 @@ import unittest
 from typing import Any, List
 
 import instr_types as t
-from vm_types import Contract, Instr, Or
+from vm_types import Contract, Instr, Or, Pair
 
 
 class CompilerBackend:
@@ -11,7 +11,7 @@ class CompilerBackend:
 
     def compile_type(self, parameter):
         if type(parameter) == Or:
-            return {
+            micheline = {
                 "prim": "or",
                 "args": [
                     self.compile_type(parameter.left),
@@ -19,13 +19,36 @@ class CompilerBackend:
                 ],
             }
         elif type(parameter) == t.Int:
-            return {
+            micheline = {
                 "prim": "int",
             }
         elif type(parameter) == t.String:
-            return {
+            micheline = {
                 "prim": "string",
             }
+        elif type(parameter) == t.Address:
+            micheline = {
+                "prim": "address",
+            }
+        elif type(parameter) == Pair:
+            micheline = {
+                "prim": "pair",
+                "args": [
+                    self.compile_type(parameter.car),
+                    self.compile_type(parameter.cdr),
+                ],
+            }
+
+        else:
+            return NotImplementedError
+
+        try:
+            if parameter.annotation:
+                micheline["annots"] = [parameter.annotation]
+        except AttributeError:
+            pass
+
+        return micheline
 
     def compile_instruction(self, instruction: Instr):
         if instruction.name == "ADD":

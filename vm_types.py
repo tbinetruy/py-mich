@@ -1,6 +1,6 @@
 import unittest
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, NewType, Tuple
+from typing import Any, Callable, Dict, List, NewType, Tuple, Optional
 
 import instr_types as t
 from helpers import Tree
@@ -29,6 +29,7 @@ class Pair:
 
     car: Any
     cdr: Any
+    annotation: Optional[str] = None
 
 
 @dataclass
@@ -176,12 +177,15 @@ class Contract:
             return self.entrypoints[entrypoint_names[0]].arg_type
         else:
             parameter_tree = ParameterTree()
-            return parameter_tree.list_to_tree(
-                [
+            entrypoints = [
                     self.entrypoints[name].prototype.arg_type
                     for name in sorted(entrypoint_names)
                 ]
-            )
+
+            for i, entrypoint in enumerate(entrypoints):
+                entrypoint.annotation = "%" + sorted(list(entrypoint_names))[i]
+
+            return parameter_tree.list_to_tree(entrypoints)
 
     def get_contract_body(self):
         entrypoints = [
