@@ -555,8 +555,8 @@ class Compiler:
     def compile_record(self, record_ast: ast.ClassDef, e: Env) -> List[Instr]:
         attribute_names = [attr.target.id for attr in record_ast.body]
         attribute_types = []
-        for attr in record_ast.body:
-            attribute_types.append(self.type_parser.parse(attr.annotation, e))
+        for attr_name, attr in zip(attribute_names, record_ast.body):
+            attribute_types.append(self.type_parser.parse(attr.annotation, e, "%" + attr_name))
 
         e.records[record_ast.name] = Record(attribute_names, attribute_types)
         return []
