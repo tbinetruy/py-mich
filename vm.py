@@ -70,8 +70,9 @@ class VM:
     def get_init_sp():
         return -1
 
-    def __init__(self, isDebug=False):
+    def __init__(self, isDebug=False, sender="tz123"):
         self.isDebug = isDebug
+        self.sender = sender
         self._reset_stack()
 
         # See: https://tezos.gitlab.io/whitedoc/michelson.html
@@ -101,6 +102,7 @@ class VM:
             "NIL": self.nil,
             "PAIR": self.make_pair,
             "PUSH": self.push,
+            "SENDER": self.push_sender,
             "SWAP": self.swap,
         }
 
@@ -108,6 +110,9 @@ class VM:
         error_message = self.stack.pop()
         self._reset_stack()
         raise VMFailwithException(error_message)
+
+    def push_sender(self):
+        self._push(self.sender)
 
     def if_(self, cond_true, cond_false):
         self._assert_min_stack_length(1)
@@ -171,7 +176,10 @@ class VM:
             if self.isDebug:
                 print("=== ", instr.name, instr.args, instr.kwargs, " ===")
                 self._debug()
-            instr_function = self.instruction_mapping[instr.name]
+            try:
+                instr_function = self.instruction_mapping[instr.name]
+            except:
+                breakpoint()
             instr_function(*instr.args, **instr.kwargs)
             if self.isDebug:
                 self._debug()
@@ -931,6 +939,14 @@ class TestVM(unittest.TestCase):
         vm._push(b)
         vm.append_before_list()
         self.assertEqual(vm.stack[0].els, [b, a])
+
+    def test_sender(self):
+        sender = "tz12345"
+        vm = VM(sender=sender)
+
+        instructions = [Instr("SENDER", [], {})]
+        vm._run_instructions(instructions)
+        self.assertEqual(vm.stack, [sender])
 
 
 for TestSuite in [TestContract, TestVM]:

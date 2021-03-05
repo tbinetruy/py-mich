@@ -33,6 +33,9 @@ class Contract:
         return Storage("{admin}", '', '', '', '', '', '')
 
     def open(params: OpenArg) -> Storage:
+        if self.sender != self.storage.admin:
+            raise "Only owner can call open"
+
         self.storage.open = params.open
         self.storage.manifest_url = params.manifest_url
         self.storage.manifest_hash = params.manifest_hash
@@ -40,11 +43,17 @@ class Contract:
         return self.storage
 
     def close(params: str) -> Storage:
+        if self.sender != self.storage.admin:
+            raise "Only owner can call close"
+
         self.storage.close = params
 
         return self.storage
 
     def artifacts(params: ArtifactsArg) -> Storage:
+        if self.sender != self.storage.admin:
+            raise "Only owner can call artifacts"
+
         self.storage.artifacts_url = params.artifacts_url
         self.storage.artifacts_hash = params.artifacts_hash
 

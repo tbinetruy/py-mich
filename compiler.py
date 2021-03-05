@@ -584,10 +584,23 @@ class Compiler:
                 and storage_get_ast.attr == "storage"
             )
 
+    def check_get_sender(self, sender_ast: ast.Attribute) -> bool:
+        return (
+            sender_ast.value.id == "self"
+            and sender_ast.attr == "sender"
+        )
+
+    def get_sender(self, sender_ast: ast.Attribute, e: Env) -> List[Instr]:
+        e.sp += 1  # account for pushing sender
+        return [Instr("SENDER", [], {})]
+
     @debug
     def compile_attribute(self, attribute_ast: ast.Attribute, e: Env) -> List[Instr]:
         if self.check_get_storage(attribute_ast):
             return self.handle_get_storage(attribute_ast, e)
+
+        if self.check_get_sender(attribute_ast):
+            return self.get_sender(attribute_ast, e)
 
         load_object_instructions = self.compile_name(attribute_ast.value, e)
         record = e.records[e.types[attribute_ast.value.id]]
@@ -881,6 +894,9 @@ class Contract:
         return Storage("{admin}", '', '', '', '', '', '')
 
     def open(params: OpenArg) -> Storage:
+        if self.sender != self.storage.admin:
+            raise "Only owner can call open"
+
         self.storage.open = params.open
         self.storage.manifest_url = params.manifest_url
         self.storage.manifest_hash = params.manifest_hash
@@ -898,13 +914,19 @@ class Contract:
 
         return self.storage
         """
-        vm = VM(isDebug=False)
+        vm = VM(isDebug=False, sender=admin)
         c = Compiler(source, isDebug=False)
         instructions = c._compile(c.ast)
         vm.run_contract(c.contract, "open", Pair(Pair("foo", "bar"), "baz"))
-        comp = c
         expected_storage = Pair(Pair(Pair(admin, 'bar'), Pair('baz', 'foo')), Pair(Pair('', ''), ''))
         self.assertEqual(c.contract.storage, expected_storage)
+
+        vm.sender = "foobar"
+        try:
+            vm.run_contract(c.contract, "open", Pair(Pair("foo", "bar"), "baz"))
+            assert 0
+        except VMFailwithException as e:
+            assert e.message == "Only owner can call open"
 
         vm.run_contract(c.contract, "close", "foobar")
         comp = c
@@ -1331,6 +1353,14 @@ add(Storage(1, 2, 3))
         instructions = c._compile(c.ast)
         vm._run_instructions(instructions)
         self.assertEqual(vm.stack[-1], 6)
+
+    def test_sender(self):
+        source = "self.sender"
+        vm = VM(isDebug=False, sender="foobar")
+        c = Compiler(source, isDebug=False)
+        instructions = c._compile(c.ast)
+        vm._run_instructions(instructions)
+        self.assertEqual(vm.stack, ["foobar"])
 
 
 for TestSuite in [

@@ -93,6 +93,32 @@ class CompilerBackend:
             return {"prim": ""}
         elif instruction.name == "CONS":
             return {"prim": "CONS"}
+        elif instruction.name == "SENDER":
+            return {"prim": "SENDER"}
+        elif instruction.name == "COMPARE":
+            return {"prim": "COMPARE"}
+        elif instruction.name == "EQ":
+            return {"prim": "EQ"}
+        elif instruction.name == "NEQ":
+            return {"prim": "NEQ"}
+        elif instruction.name == "LT":
+            return {"prim": "LT"}
+        elif instruction.name == "GT":
+            return {"prim": "GT"}
+        elif instruction.name == "LE":
+            return {"prim": "LE"}
+        elif instruction.name == "GE":
+            return {"prim": "GE"}
+        elif instruction.name == "FAILWITH":
+            return {"prim": "FAILWITH"}
+        elif instruction.name == "IF":
+            return {
+                "prim": "IF",
+                "args": [
+                    self.compile_instructions(instruction.args[0]),
+                    self.compile_instructions(instruction.args[1]),
+                ],
+            }
         elif instruction.name == "IF_LEFT":
             return {
                 "prim": "IF_LEFT",
