@@ -208,6 +208,15 @@ except MichelsonError:
     assert 1
 #+end_src
 
+* Todo
+
+- [ ] multi argument functions
+- [ ] dictionnaries
+- [ ] lists
+- [ ] closures
+- [ ] nested records
+- [ ] tuples
+
 * Pass 1: AST expansion
 
 ** Class rewritting
