@@ -309,6 +309,13 @@ class Compiler:
         return left + right + op
 
     @debug
+    def compile_sub(self, t: ast.Sub, e: Env) -> List[Instr]:
+        e.sp -= 1  # Account for SUB
+        return [
+            Instr("SUB", [], {}),
+        ]
+
+    @debug
     def compile_add(self, t: ast.Add, e: Env) -> List[Instr]:
         e.sp -= 1  # Account for ADD
         return [
@@ -680,6 +687,8 @@ class Compiler:
             instructions += self.compile_binop(node_ast, e)
         elif type(node_ast) == ast.Add:
             instructions += self.compile_add(node_ast, e)
+        elif type(node_ast) == ast.Sub:
+            instructions += self.compile_sub(node_ast, e)
         elif type(node_ast) == ast.List:
             instructions += self.compile_list(node_ast, e)
         elif type(node_ast) == ast.FunctionDef:

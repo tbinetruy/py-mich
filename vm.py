@@ -103,6 +103,7 @@ class VM:
             "PAIR": self.make_pair,
             "PUSH": self.push,
             "SENDER": self.push_sender,
+            "SUB": self.sub,
             "SWAP": self.swap,
         }
 
@@ -263,6 +264,13 @@ class VM:
 
         if self.isDebug:
             print("@@@@@@@ End executing function @@@@@@@")
+
+    @debug
+    def sub(self):
+        self._assert_min_stack_length(2)
+        a = self.pop()
+        b = self.pop()
+        self._push(a - b)
 
     @debug
     def add(self):
@@ -863,6 +871,26 @@ class TestVM(unittest.TestCase):
         vm._push(b)
         vm.dup()
         self.assertEqual(vm.stack, [a, b, b])
+
+    def test_sub(self):
+        vm = VM()
+
+        a, b, c, d = 1, 2, 3, 4
+        vm._push(a)
+        vm._push(b)
+        vm._push(c)
+        vm._push(d)
+        vm.sub()
+        self.assertEqual(vm.stack, [a, b, d - c])
+        vm.sub()
+        self.assertEqual(vm.stack, [a, d - c - b])
+        vm.sub()
+        self.assertEqual(vm.stack, [d - c - b - a])
+        try:
+            vm.sub()
+            assert 0
+        except VMStackException:
+            assert 1
 
     def test_add(self):
         vm = VM()
