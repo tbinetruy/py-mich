@@ -90,7 +90,10 @@ class CompilerBackend:
         elif instruction.name == "EXEC":
             return {"prim": "EXEC"}
         elif instruction.name == "LAMBDA":
-            return {"prim": ""}
+            arg_type = self.compile_type(instruction.args[0])
+            return_type = self.compile_type(instruction.args[1])
+            body = self.compile_instructions(instruction.args[2])
+            return {"prim": "LAMBDA", "args": [arg_type, return_type, body]}
         elif instruction.name == "CONS":
             return {"prim": "CONS"}
         elif instruction.name == "SENDER":
