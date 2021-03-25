@@ -12,7 +12,8 @@ class Type:
 
 
 class Unit(Type):
-    pass
+    def __str__(self):
+        return "unit"
 
 
 class Int(Type):
@@ -23,6 +24,11 @@ class Int(Type):
 class String(Type):
     def __str__(self):
         return "string"
+
+
+class Bool(Type):
+    def __str__(self):
+        return "bool"
 
 
 class Address(Type):
@@ -59,6 +65,10 @@ class TypeParser:
             return String(annotation)
         if name.id == 'address':
             return Address(annotation)
+        if name.id == 'bool':
+            return Bool(annotation)
+        if name.id == 'unit':
+            return Unit(annotation)
         if name.id in e.records.keys():
             return e.records[name.id].get_type()
         raise NotImplementedError

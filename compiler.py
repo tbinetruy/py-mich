@@ -155,7 +155,13 @@ class Compiler:
         for key, value in ast.iter_fields(m):
             if key == "body":
                 for childNode in value:
-                    instructions += self._compile(childNode, e)
+                    if type(childNode) == ast.ClassDef:
+                        if childNode.name == "Contract":
+                            instructions += self._compile(childNode, e, instructions)
+                        else:
+                            instructions += self._compile(childNode, e)
+                    else:
+                        instructions += self._compile(childNode, e)
 
         return instructions
 
@@ -344,10 +350,12 @@ class Compiler:
 
     def free_var(self, var_name, e: Env):
         var_location = e.vars[var_name]
+        comment = [Comment(f"Freeing var {var_name} at {var_location}, e.sp = {e.sp}")]
+
         jump = e.sp - var_location
         e.sp -= 1  # account for freeing var
+        del e.vars[var_name]
 
-        comment = [Comment(f"Freeing var {var_name} at {var_location}")]
         return (
             comment
             + [
@@ -376,26 +384,32 @@ class Compiler:
         e.sp += 1  # account for body push
 
         e.vars[f.name] = e.sp
-        e.args[f.name] = f.args.args[0].arg
 
-        # type argument
-        if f.args.args[0].annotation.id in e.records:
-            e.types[f.args.args[0].arg] = f.args.args[0].annotation.id
+        for arg_ast in f.args.args:
+            e.args[f.name] = arg_ast.arg
+
+            # type argument
+            if arg_ast.annotation.id in e.records:
+                e.types[arg_ast.arg] = arg_ast.annotation.id
 
         prototype = self._get_function_prototype(f, e)
         arg_type, return_type = prototype.arg_type, prototype.return_type
         # get init env keys
         init_var_names = set(e.vars.keys())
 
+
+        # We work on an env copy to prevent from polluting the environment
+        # with vars that we'd need to remove.
         func_env = e.copy()
 
         # store argument in env
-        func_env.sp += 1
-        func_env.vars[f.args.args[0].arg] = func_env.sp
+        for arg_ast in f.args.args:
+            func_env.sp += 1
+            func_env.vars[arg_ast.arg] = func_env.sp
 
         body_instructions = self._compile_block(f.body, func_env)
-        # account for pushed result
-        func_env.sp += 1
+
+        # freeing the argument
         body_instructions += self.free_var(f.args.args[0].arg, func_env)[0]
 
         comment = [Comment(f"Storing function {f.name} at {e.vars[f.name]}")]
@@ -415,16 +429,12 @@ class Compiler:
 
     @debug
     def compile_fcall(self, f: ast.Call, e: Env):
+        # if dealing with a record instantiation, compile as such
         if f.func.id in e.records.keys():
             return self.compile_ccall(f, e)
 
-        # We work on an env copy to prevent from polluting the environment
-        # with vars that we'd need to remove. We have to remember to pass
-        # back the new stack pointer however
-        tmp_env = e.copy()
-
-        func_addr = tmp_env.vars[f.func.id]
-        jump_length = tmp_env.sp - func_addr
+        func_addr = e.vars[f.func.id]
+        jump_length = e.sp - func_addr
         comment = [
             Comment(f"Moving to function {f.func.id} at {func_addr}, e.sp = {e.sp}")
         ]
@@ -435,21 +445,18 @@ class Compiler:
             Instr("DUG", [jump_length + 1], {}),
         ]
 
-        tmp_env.sp += 1  # Account for DUP
+        e.sp += 1  # Account for DUP
 
         # fetch arg name for function
-        load_arg = self._compile(f.args[0], tmp_env)
+        load_arg = self._compile(f.args[0], e)
 
-        tmp_env.sp += 1  # Account for pushing argument
+        e.sp += 1  # Account for pushing argument
 
         execute_function = [Instr("EXEC", [], {})]
 
-        tmp_env.sp -= 2  # Account popping EXEC and LAMBDA
+        e.sp -= 2  # Account popping EXEC and LAMBDA
 
         instr = comment + load_function + load_arg + execute_function
-
-        # We pass back the new stack pointer
-        e.sp = tmp_env.sp
 
         return instr
 
@@ -461,17 +468,21 @@ class Compiler:
         return Env({}, -1, {}, {}, {})
 
     @debug
-    def compile_entrypoint(self, f: ast.FunctionDef, e: Env) -> List[Instr]:
+    def compile_entrypoint(self, f: ast.FunctionDef, e: Env, prologue_instructions: List[Instr]) -> List[Instr]:
+        e = e.copy()
+        # we update the variable pointers to account for the fact that the first
+        # element on the stack is Pair(param, storage)
+        e.vars = {var_name: address + 2 for var_name, address in e.vars.items()}
+        e.sp += 1  # account for pushing Pair(param, storage)
+        e.sp += 1  # account for breaking up Pair(param, storage)
 
         # Save the storage and entrypoint argument on the stack
-        if not self.contract.instructions:
-            self.contract.instructions = [
-                Instr("DUP", [], {}),  # [Pair(param, storage), Pair(param, storage)]
-                Instr("CDR", [], {}),  # [Pair(param, storage), storage]
-                Instr("DUG", [1], {}),  # [storage, Pair(param, storage)]
-                Instr("CAR", [], {}),  # [storage, param]
-            ]
-        e.sp = 1  # update stack pointer
+        self.contract.instructions = [
+            Instr("DUP", [], {}),  # [Pair(param, storage), Pair(param, storage)]
+            Instr("CDR", [], {}),  # [Pair(param, storage), storage]
+            Instr("DUG", [1], {}), # [storage, Pair(param, storage)]
+            Instr("CAR", [], {}),  # [storage, param]
+        ]
         e.vars["storage"] = 0
         e.vars[f.args.args[0].arg] = 1
 
@@ -479,32 +490,40 @@ class Compiler:
         if f.args.args[0].annotation.id in e.records:
             e.types[f.args.args[0].arg] = f.args.args[0].annotation.id
 
-        free_argument_instructions = [
-            Comment(f"Freeing argument at sp={e.vars[f.args.args[0].arg]}"),
-            Instr("DIP", [1, [Instr("DROP", [], {})]], {}),
-        ]
-        free_storage_instructions = [
-            Comment("Freeing storage at e.sp=" + str(e.vars["storage"])),
-            Instr("DIP", [1, [Instr("DROP", [], {})]], {}),
-        ]
+        block_instructions = self._compile_block(f.body, e)
+        entrypoint_instructions = prologue_instructions + block_instructions
+
+        free_vars_instructions = self.free_vars(list(e.vars.keys()), e)
         epilogue = [
             Instr("NIL", [t.Operation()], {}),
             Instr("PAIR", [], {}),
         ]
 
-        entrypoint_instructions = self._compile_block(f.body, e) + free_argument_instructions + free_storage_instructions + epilogue
+        entrypoint_instructions = entrypoint_instructions + free_vars_instructions + epilogue
+
         prototype = self._get_function_prototype(f, e)
         entrypoint = Entrypoint(prototype, entrypoint_instructions)
         self.contract.add_entrypoint(f.name, entrypoint)
         return []
 
-    def _compile_block(self, block_ast: List[ast.AST], e: Env) -> List[Instr]:
+    def free_vars(self, var_names: List[str], e: Env) -> List[Instr]:
+        # Free from the top of the stack. this ensures that the variable pointers
+        # are not changed as variables are freed from the stack
+        sorted_keys = sorted(var_names, key=lambda var_name: e.vars[var_name], reverse=True)
+
+        # remove env vars from memory
+        free_var_instructions = []
+        for var_name in sorted_keys:
+            instr, _ = self.free_var(var_name, e)
+            free_var_instructions += instr
+
+        return free_var_instructions
+
+    def _compile_block(self, block_ast: List[ast.AST], block_env: Env) -> List[Instr]:
         """frees newly declared variables at the end of the block, hence °e°
         should be the same befor and after the block"""
         # get init env keys
-        init_var_names = set(e.vars.keys())
-
-        block_env = e.copy()
+        init_var_names = set(block_env.vars.keys())
 
         # iterate body instructions
         block_instructions = []
@@ -517,15 +536,7 @@ class Compiler:
         # intersect init and new env keys
         intersection = list(new_var_names - init_var_names)
 
-        # Free from the top of the stack. this ensures that the variable pointers
-        # are not changed as variables are freed from the stack
-        sorted_keys = sorted(intersection, key=lambda a: block_env.vars[a], reverse=True)
-
-        # remove env vars from memory
-        free_var_instructions = []
-        for var_name in sorted_keys:
-            instr, block_env = self.free_var(var_name, block_env)
-            free_var_instructions += instr
+        free_var_instructions = self.free_vars(intersection, block_env)
 
         return block_instructions + free_var_instructions
 
@@ -546,7 +557,7 @@ class Compiler:
             return NotImplementedError
 
     @debug
-    def compile_contract(self, contract_ast: ast.ClassDef, e: Env) -> List[Instr]:
+    def compile_contract(self, contract_ast: ast.ClassDef, e: Env, prologue_instructions: List[Instr]) -> List[Instr]:
         instructions = []
         for entrypoint in contract_ast.body:
             if entrypoint.name == "deploy":
@@ -555,7 +566,7 @@ class Compiler:
                 else:
                     return NotImplementedError
             else:
-                instructions += self.compile_entrypoint(entrypoint, e)
+                instructions += self.compile_entrypoint(entrypoint, e, prologue_instructions)
         return instructions
 
     @debug
@@ -658,12 +669,21 @@ class Compiler:
 
     def compile(self):
         return self._compile(self.ast)
-        return self
 
-    def _compile(self, node_ast, e: Optional[Env] = None) -> List[Instr]:
+    def compile_new(self):
+        e = self.get_init_env()
+        e.sp = 1  # account for storage and entrypoint arg
+        self.contract.instructions = self._compile(self.ast, e)
+        print("e.sp = ", e.sp, self.env.sp)
+        self._compile(self.ast, self.env)
+        return self.contract
+
+    def _compile(self, node_ast, e: Optional[Env] = None, instructions = None) -> List[Instr]:
         e = self.get_init_env() if not e else e
         self.env = e  # saving as attribute for debug purposes
-        instructions: List[Instr] = []
+
+        if not instructions:
+            instructions = []
 
         if type(node_ast) == ast.Module:
             instructions += self.compile_module(node_ast, e)
@@ -701,7 +721,7 @@ class Compiler:
             instructions += self.compile_fcall(node_ast, e)
         elif type(node_ast) == ast.ClassDef:
             if node_ast.name == "Contract":
-                instructions += self.compile_contract(node_ast, e)
+                instructions += self.compile_contract(node_ast, e, instructions)
             elif "dataclass" in [decorator.id for decorator in node_ast.decorator_list]:
                 instructions += self.compile_record(node_ast, e)
             else:
@@ -872,8 +892,101 @@ my_storage # get storage
             instructions,
         )
 
-
 class TestContract(unittest.TestCase):
+    def test_condition_in_function(self):
+        source = f"""
+def foo(x: int) -> int:
+    y = 2
+    if x == y:
+        x = x + x + x
+    else:
+        x = x + 10
+    return x + y
+
+class Contract:
+    def deploy():
+        return 0
+
+    def add(x: int) -> int:
+        return foo(x)
+
+    def sub(x: int) -> int:
+        return foo(x)
+        """
+        vm = VM(isDebug=False)
+        c = Compiler(source, isDebug=False)
+        c.compile()
+        contract = c.contract
+        vm.run_contract(contract, "add", 2)
+        self.assertEqual(contract.storage, 8)
+        self.assertEqual(vm.stack, [])
+        vm.run_contract(contract, "add", 3)
+        self.assertEqual(contract.storage, 15)
+        self.assertEqual(vm.stack, [])
+
+    def test_function(self):
+        admin =  "tzaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        source = f"""
+@dataclass
+class Storage:
+    admin: address
+    counter: int
+
+@dataclass
+class RequireArg:
+    condition: bool
+    message: str
+
+def require(param: RequireArg) -> int:
+    if param.condition:
+        return 0
+    else:
+        raise param.message
+
+def double(x: int) -> int:
+    return x + x
+
+def triple(x: int) -> int:
+    return x + x + x
+
+class Contract:
+    def deploy():
+        return Storage("{admin}", 0)
+
+    def add(param: int) -> Storage:
+        _ = require(RequireArg(self.sender == self.storage.admin, "Only owner can call open"))
+
+        self.storage.counter = self.storage.counter + param
+        return self.storage
+
+    def sub(param: int) -> Storage:
+        if self.sender != self.storage.admin:
+            raise "Only owner can call open"
+
+        self.storage.counter = self.storage.counter - param
+        return self.storage
+
+    def quintuple(param: int) -> Storage:
+        _ = require(RequireArg(self.sender == self.storage.admin, "Only owner can call open"))
+
+        self.storage.counter = double(self.storage.counter) + triple(self.storage.counter)
+        return self.storage
+        """
+        vm = VM(isDebug=False, sender=admin)
+        c = Compiler(source, isDebug=False)
+        c.compile()
+        contract = c.contract
+        vm.run_contract(contract, "add", 1)
+        self.assertEqual(contract.storage, Pair(admin, 1))
+        self.assertEqual(vm.stack, [])
+        vm.run_contract(contract, "sub", 1)
+        self.assertEqual(contract.storage, Pair(admin, 0))
+        self.assertEqual(vm.stack, [])
+        vm.run_contract(contract, "add", 1)
+        vm.run_contract(contract, "quintuple", 1)
+        self.assertEqual(contract.storage, Pair(admin, 5))
+        self.assertEqual(vm.stack, [])
+
     def test_election(self):
         admin =  "tzaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         source = f"""
@@ -985,7 +1098,6 @@ class Contract:
 
 
     def test_contract_final(self):
-
         vm = VM(isDebug=False)
         owner =  "tzaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         source = f"""
@@ -1037,7 +1149,6 @@ class Contract:
         self.assertEqual(vm.stack, [])
 
     def test_contract_multitype_storage_with_condition(self):
-        vm = VM(isDebug=False)
         source = """
 @dataclass
 class Storage:
@@ -1051,13 +1162,14 @@ class Contract:
     def add(a: int) -> int:
         if a < 10:
             raise 'input smaller than 10'
-        else:
-            a = a + a
-            return Storage(self.storage.owner, self.storage.counter + a)
+
+        b = a + a
+        return Storage(self.storage.owner, self.storage.counter + b)
 
     def update_owner(new_owner: str) -> int:
         return Storage(new_owner, self.storage.counter)
         """
+        vm = VM(isDebug=False)
         c = Compiler(source, isDebug=False)
         c._compile(c.ast)
         try:
@@ -1197,7 +1309,6 @@ a = a + 2
 
 class TestCompilerDefun(unittest.TestCase):
     def test_func_def(self):
-        vm = VM(isDebug=False)
         source = """baz = 1
 def foo(a: int) -> int:
     b = 2
@@ -1206,6 +1317,7 @@ bar = foo(baz)
 fff = foo(bar)
 foo(foo(bar))
 """
+        vm = VM(isDebug=False)
         c = Compiler(source, isDebug=False)
         instructions = c._compile(c.ast)
         vm._run_instructions(instructions)
@@ -1344,6 +1456,29 @@ else:
         except VMFailwithException:
             assert 1
 
+    def test_reassign_in_condition(self):
+        def get_source(a):
+            return f"""
+a = {a}
+if a > 0:
+    a = 11
+else:
+    a = 12
+            """
+        source = get_source(10)
+        vm = VM(isDebug=False)
+        c = Compiler(source, isDebug=False)
+        instructions = c._compile(c.ast)
+        vm._run_instructions(instructions)
+        self.assertEqual(vm.stack, [11])
+
+        source = get_source(0)
+        vm = VM(isDebug=False)
+        c = Compiler(source, isDebug=False)
+        instructions = c._compile(c.ast)
+        vm._run_instructions(instructions)
+        self.assertEqual(vm.stack, [12])
+
     def test_record_as_function_argument(self):
         source = """
 @dataclass
@@ -1373,8 +1508,8 @@ add(Storage(1, 2, 3))
 
 
 for TestSuite in [
-    TestRecord,
     TestContract,
+    TestRecord,
     TestCompilerUnit,
     TestCompilerList,
     TestCompilerAssign,
