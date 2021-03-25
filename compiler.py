@@ -309,8 +309,8 @@ class Compiler:
 
     @debug
     def compile_binop(self, t: ast.BinOp, e: Env) -> List[Instr]:
-        left = self._compile(t.left, e)
-        right = self._compile(t.right, e)
+        left = self._compile(t.right, e)
+        right = self._compile(t.left, e)
         op = self._compile(t.op, e)
         return left + right + op
 
