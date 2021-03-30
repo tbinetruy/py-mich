@@ -471,8 +471,11 @@ class Compiler:
     def compile_entrypoint(self, f: ast.FunctionDef, e: Env, prologue_instructions: List[Instr]) -> List[Instr]:
         e = e.copy()
         # we update the variable pointers to account for the fact that the first
-        # element on the stack is Pair(param, storage)
-        e.vars = {var_name: address + 2 for var_name, address in e.vars.items()}
+        # element on the stack is Pair(param, storage).
+        # we are targetting a stack that will look like [storage, {prologue_instructions}, param]
+        # hence, we need to add 1 to all the addresses of the variables in `prologue_instructions`
+        e.vars = {var_name: address + 1 for var_name, address in e.vars.items()}
+
         e.sp += 1  # account for pushing Pair(param, storage)
         e.sp += 1  # account for breaking up Pair(param, storage)
 
@@ -482,16 +485,24 @@ class Compiler:
             Instr("CDR", [], {}),  # [Pair(param, storage), storage]
             Instr("DUG", [1], {}), # [storage, Pair(param, storage)]
             Instr("CAR", [], {}),  # [storage, param]
+        ] + prologue_instructions + [
+            Instr("DIG", [e.sp - 1], {}),  # fetch the entrypoint argument
         ]
+
+        # the storage is at the bottom of the stack
         e.vars["storage"] = 0
-        e.vars[f.args.args[0].arg] = 1
+
+        # the parameter is a the top of the stack
+        # N.B. all variables declared in the prologue instructions) are
+        #      laying between the storage and the parameter (hence the +1 above)
+        e.vars[f.args.args[0].arg] = e.sp
 
         # type argument
         if f.args.args[0].annotation.id in e.records:
             e.types[f.args.args[0].arg] = f.args.args[0].annotation.id
 
         block_instructions = self._compile_block(f.body, e)
-        entrypoint_instructions = prologue_instructions + block_instructions
+        entrypoint_instructions = block_instructions
 
         free_vars_instructions = self.free_vars(list(e.vars.keys()), e)
         epilogue = [
