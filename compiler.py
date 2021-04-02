@@ -904,11 +904,42 @@ my_storage # get storage
         )
 
 class TestContract(unittest.TestCase):
+    def test_dataclass_entrypoint_param(self):
+        source = f"""
+@dataclass
+class AddParam:
+    x: int
+    y: int
+
+class Contract:
+    def deploy():
+        return 0
+
+    def add(param: AddParam) -> int:
+        return param.x + param.y
+
+    def sub(x: int) -> int:
+        return x
+        """
+        vm = VM(isDebug=False)
+        c = Compiler(source, isDebug=False)
+        c.compile()
+        contract = c.contract
+        vm.run_contract(contract, "add", Pair(2, 3))
+        self.assertEqual(contract.storage, 5)
+        self.assertEqual(vm.stack, [])
+
     def test_condition_in_function(self):
         source = f"""
-def foo(x: int) -> int:
-    y = 2
-    if x == y:
+@dataclass
+class AddParam:
+    x: int
+    y: int
+
+def foo(param: AddParam) -> int:
+    x = param.x
+    y = param.y
+    if x == param.y:
         x = x + x + x
     else:
         x = x + 10
@@ -918,20 +949,20 @@ class Contract:
     def deploy():
         return 0
 
-    def add(x: int) -> int:
-        return foo(x)
+    def add(param: AddParam) -> int:
+        return foo(param)
 
     def sub(x: int) -> int:
-        return foo(x)
+        return x
         """
         vm = VM(isDebug=False)
         c = Compiler(source, isDebug=False)
         c.compile()
         contract = c.contract
-        vm.run_contract(contract, "add", 2)
+        vm.run_contract(contract, "add", Pair(2, 2))
         self.assertEqual(contract.storage, 8)
         self.assertEqual(vm.stack, [])
-        vm.run_contract(contract, "add", 3)
+        vm.run_contract(contract, "add", Pair(2, 3))
         self.assertEqual(contract.storage, 15)
         self.assertEqual(vm.stack, [])
 
