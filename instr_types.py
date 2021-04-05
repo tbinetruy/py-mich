@@ -73,7 +73,18 @@ class TypeParser:
             return e.records[name.id].get_type()
         raise NotImplementedError
 
+    def parse_dict(self, dictionary: ast.Subscript, e, annotation):
+        key_type = self.parse(dictionary.slice.value.elts[0], e, annotation)
+        value_type = self.parse(dictionary.slice.value.elts[1], e, annotation)
+        return Dict(key_type, value_type)
+
+    def parse_subscript(self, subscript: ast.Dict, e, annotation):
+        if subscript.value.id == "Dict":
+            return self.parse_dict(subscript, e, annotation)
+
     def parse(self, type_ast, e, annotation: Optional[str] = None) -> Type:
         if type(type_ast) == ast.Name:
             return self.parse_name(type_ast, e, annotation)
+        if type(type_ast) == ast.Subscript:
+            return self.parse_subscript(type_ast, e, annotation)
         raise NotImplementedError

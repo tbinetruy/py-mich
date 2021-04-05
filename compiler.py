@@ -11,6 +11,17 @@ from vm_types import (Array, Contract, Entrypoint, FunctionPrototype, Instr,
                       Pair)
 
 
+class CompilerError(Exception):
+    """Raised when the compiler fails
+
+    Attributes:
+        message -- error message
+    """
+
+    def __init__(self, message):
+        self.message = message
+
+
 def debug(cb):
     def f(*args, **kwargs):
         self = args[0]
@@ -103,14 +114,18 @@ class Record(Tree):
         tree = self.list_to_tree(attribute_values)
         return self._compile_node(tree)
 
-    def _compile_node_new(self, node, compile_function, env):
+    def _compile_node_new(self, node, compile_function, env, counter=-1):
         if type(node) == Pair:
-            el1 = self._compile_node_new(node.cdr, compile_function, env)
-            el2 = self._compile_node_new(node.car, compile_function, env)
+            if type(node.cdr) != Pair:
+                counter = 1
+            el1 = self._compile_node_new(node.cdr, compile_function, env, counter)
+            if type(node.car) != Pair:
+                counter = 0
+            el2 = self._compile_node_new(node.car, compile_function, env, counter)
             env.sp -= 1  # account for pair
             return el1 + el2 + [Instr("PAIR", [], {})]
         else:
-            return compile_function(node, env)
+            return compile_function(node, env, current_type=self.attribute_types[counter])
 
     def compile_record(self, attribute_values, compile_function, env):
         tree = self.list_to_tree(attribute_values)
@@ -224,6 +239,66 @@ class Compiler:
         )
         return self.compile_assign(new_ast, e)
 
+    def compile_dict(self, dict_ast: ast.Dict, key_type: t.Type, value_type: t.Type, e: Env) -> List[Instr]:
+        e.sp += 1  # account for pushing dict
+        return [Instr("EMPTY_MAP", [key_type, value_type], {})]
+
+    def compile_literal(self, literal, e: Env) -> List[Instr]:
+        if type(literal) == ast.Dict:
+            return self.compile_dict(literal, e)
+        else:
+            return self.compile_expr(literal, e)
+
+    def _is_literal(self, literal_ast):
+        if type(literal_ast) == ast.Dict:
+            return True
+        else:
+            return False
+
+    @debug
+    def compile_ann_assign(self, assign: ast.AnnAssign, e: Env) -> List[Instr]:
+        try:
+            # is reassignment
+            if assign.targets[0].id in e.vars.keys():
+                raise CompilerError("Cannot reassign with annotation")
+        except:
+            pass
+
+        instructions: List[Instr] = []
+        var_name = assign.target
+
+        if self._is_literal(assign.value):
+            compiled_value = self.compile_literal(assign.value, e)
+        else:
+            compiled_value = self._compile(assign.value, e)
+
+        value = assign.value
+        instructions = self._compile(var_name, e) + compiled_value
+        e.vars[var_name.id] = e.sp
+
+        try:
+            if assign.value.func.id in e.records:
+                e.types[var_name.id] = assign.value.func.id
+        except:
+            pass
+
+        try:
+            print_val = value.value
+        except:
+            print_val = "[object]"
+        return [Comment(f"{var_name.id} = {print_val}")] + instructions
+
+    @debug
+    def compile_assign_subscript(self, assign_subscript: ast.Assign, e: Env) -> List[Instr]:
+        dictionary = self._compile(assign_subscript.targets[0].value, e)
+        value = self._compile(assign_subscript.value, e)
+        key = self._compile(assign_subscript.targets[0].slice.value, e)
+        e.sp -= 2  # account for update dropping the key and value from the stack
+        dictionary_name = assign_subscript.targets[0].value.id
+        free_old_dict, _ = self.free_var(dictionary_name, e)
+        e.vars[dictionary_name] = e.sp
+        return dictionary + value + [Instr("SOME", [], {})] +  key + [Instr("UPDATE", [], {})] + free_old_dict
+
     @debug
     def compile_assign(self, assign: ast.Assign, e: Env) -> List[Instr]:
         try:
@@ -240,10 +315,19 @@ class Compiler:
         except:
             pass
 
+        if type(assign.targets[0]) == ast.Subscript:
+            return self.compile_assign_subscript(assign, e)
+
         instructions: List[Instr] = []
         var_name = assign.targets[0]
+
+        if self._is_literal(assign.value):
+            compiled_value = self.compile_literal(assign.value, e)
+        else:
+            compiled_value = self._compile(assign.value, e)
+
         value = assign.value
-        instructions = self._compile(var_name, e) + self._compile(value, e)
+        instructions = self._compile(var_name, e) + compiled_value
         e.vars[var_name.id] = e.sp
 
         try:
@@ -689,7 +773,7 @@ class Compiler:
         self._compile(self.ast, self.env)
         return self.contract
 
-    def _compile(self, node_ast, e: Optional[Env] = None, instructions = None) -> List[Instr]:
+    def _compile(self, node_ast, e: Optional[Env] = None, instructions = None, current_type: Optional[t.Type] = None) -> List[Instr]:
         e = self.get_init_env() if not e else e
         self.env = e  # saving as attribute for debug purposes
 
@@ -702,6 +786,8 @@ class Compiler:
                 self.print_instructions(instructions)
         elif type(node_ast) == ast.Assign:
             instructions += self.compile_assign(node_ast, e)
+        elif type(node_ast) == ast.AnnAssign:
+            instructions += self.compile_ann_assign(node_ast, e)
         elif type(node_ast) == ast.Attribute:
             instructions += self.compile_attribute(node_ast, e)
         elif type(node_ast) == ast.Expr:
@@ -737,7 +823,10 @@ class Compiler:
                 instructions += self.compile_record(node_ast, e)
             else:
                 raise NotImplementedError
+        elif type(node_ast) == ast.Dict:
+            instructions += self.compile_dict(node_ast, current_type.key_type, current_type.value_type, e)
         else:
+            breakpoint()
             raise NotImplementedError
 
         if self.isDebug:
@@ -748,6 +837,26 @@ class Compiler:
     @staticmethod
     def print_instructions(instructions):
         print("\n".join([f"{i.name} {i.args} {i.kwargs}" for i in instructions]))
+
+
+
+class TestDict(unittest.TestCase):
+    def test_creates_dict(self):
+        source = """
+@dataclass
+class Storage:
+    balances: Dict[str, int]
+    owner: str
+
+storage = Storage({}, "owner")
+balances = storage.balances
+balances['Mr. Foobar'] = 100
+        """
+        c = Compiler(source)
+        instructions = c.compile()
+        vm = VM()
+        vm._run_instructions(instructions)
+        self.assertEqual(vm.stack[1], {'Mr. Foobar': 100})
 
 
 class TestRecord(unittest.TestCase):
@@ -1329,7 +1438,6 @@ class TestCompilerList(unittest.TestCase):
         vm._run_instructions(instructions)
         self.assertEqual(vm.stack, [Array([1, 2, 3])])
 
-
 class TestCompilerAssign(unittest.TestCase):
     def test_reassign(self):
         vm = VM(isDebug=False)
@@ -1550,6 +1658,7 @@ add(Storage(1, 2, 3))
 
 
 for TestSuite in [
+    TestDict,
     TestContract,
     TestRecord,
     TestCompilerUnit,

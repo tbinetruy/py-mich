@@ -33,6 +33,19 @@ class Pair:
 
 
 @dataclass
+class Some:
+    """Michelson `option.some` type"""
+
+    value: Any
+
+    def __eq__(self, o):
+        if type(o) == type(self):
+            return self.value == o.value and self.value == o.value
+        else:
+            return False
+
+
+@dataclass
 class Or:
     """Michelson `or` type"""
 

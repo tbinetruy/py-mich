@@ -3,8 +3,8 @@ import unittest
 from typing import Any, Callable, Dict, List, Tuple
 
 import instr_types as t
-from vm_types import (Array, Contract, Entrypoint, FunctionPrototype, Instr,
-                      Left, Or, Pair, Right)
+from vm_types import (Array, Some, Contract, Entrypoint, FunctionPrototype, Instr,
+                      Left, Or, Pair, Right, Some)
 
 ph = 42  # placeholder
 
@@ -105,7 +105,48 @@ class VM:
             "SENDER": self.push_sender,
             "SUB": self.sub,
             "SWAP": self.swap,
+            "EMPTY_MAP": self.empty_map,
+            "GET": self.get,
+            "UPDATE": self.update,
+            "IF_NONE": self.if_none,
+            "SOME": self.some,
         }
+
+    def some(self):
+        val = self.pop()
+        self._push(Some(val))
+
+    def empty_map(self, key_type, value_type):
+        self._push({})
+
+    def get(self):
+        key = self.pop()
+        mapping = self.pop()
+        if key in mapping:
+            self._push(Some(mapping[key]))
+        else:
+            self._push(None)
+
+    def update(self):
+        key = self.pop()
+        optional = self.pop()
+        mapping = self.pop()
+        self._assert_type(type(optional), [Some, None], "Update requires an Option typed value")
+        if type(optional) == Some:
+            mapping[key] = optional.value
+            self._push(mapping)
+        elif type(optional) == None:
+            del mapping[key]
+            self._push(mapping)
+
+    def if_none(self, cond_true, cond_false):
+        option = self.pop()
+        self._assert_type(type(option), [Some, None], "If_none requires an Option typed value")
+        if type(option) == None:
+            self._run_instructions(cond_true)
+        elif type(option) == Some:
+            self._push(option.value)
+            self._run_instructions(cond_false)
 
     def failwith(self):
         error_message = self.stack.pop()
@@ -114,6 +155,10 @@ class VM:
 
     def push_sender(self):
         self._push(self.sender)
+
+    def _assert_type(self, actual_type, allowed_types: List[Any], error_message):
+        if actual_type not in allowed_types:
+            raise VMTypeException(allowed_types, actual_type, error_message)
 
     def if_(self, cond_true, cond_false):
         self._assert_min_stack_length(1)
@@ -486,6 +531,49 @@ class TestContract(unittest.TestCase):
 
 
 class TestVM(unittest.TestCase):
+    def test_some(self):
+        vm = VM()
+        instructions = [
+            Instr("PUSH", [t.Int, 1], {}),
+            Instr("SOME", [], {})
+        ]
+        vm._run_instructions(instructions)
+        self.assertEqual(vm.stack, [Some(1)])
+
+    def test_empty_map(self):
+        vm = VM()
+        instructions = [
+            Instr("EMPTY_MAP", [], {})
+        ]
+        vm._run_instructions(instructions)
+        self.assertEqual(vm.stack, [{}])
+
+    def test_update(self):
+        vm = VM()
+        instructions = [
+            Instr("EMPTY_MAP", [], {}),
+            Instr("PUSH", [t.Int, 2], {}),  # Value
+            Instr("SOME", [], {}),
+            Instr("PUSH", [t.Int, 1], {}),  # Key
+            Instr("UPDATE", [], {})
+        ]
+        vm._run_instructions(instructions)
+        self.assertEqual(vm.stack, [{1: 2}])
+
+    def test_get(self):
+        vm = VM()
+        instructions = [
+            Instr("EMPTY_MAP", [], {}),
+            Instr("PUSH", [t.Int, 2], {}),  # Value
+            Instr("SOME", [], {}),
+            Instr("PUSH", [t.Int, 1], {}),  # Key
+            Instr("UPDATE", [], {}),
+            Instr("PUSH", [t.Int, 1], {}),
+            Instr("GET", [], {})
+        ]
+        vm._run_instructions(instructions)
+        self.assertEqual(vm.stack, [Some(2)])
+
     def test_failwith(self):
         vm = VM()
         instructions = [

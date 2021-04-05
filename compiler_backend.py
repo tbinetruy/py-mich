@@ -38,7 +38,14 @@ class CompilerBackend:
                     self.compile_type(parameter.cdr),
                 ],
             }
-
+        elif type(parameter) == t.Dict:
+            micheline = {
+                "prim": "map",
+                "args": [
+                    {"prim": self.compile_type(t.key_type)},
+                    {"prim": self.compile_type(t.value_type)},
+                ]
+            }
         else:
             return NotImplementedError
 
