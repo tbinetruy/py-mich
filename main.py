@@ -5,60 +5,73 @@ from vm import VM
 from compiler_backend import CompilerBackend
 
 
-admin =  "tzaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-source = f"""
+source = """
 @dataclass
 class Storage:
+    balances: Dict[address, int]
+    total_supply: int
     admin: address
-    manifest_url: str
-    manifest_hash: str
-    open: str
-    close: str
-    artifacts_url: str
-    artifacts_hash: str
 
 @dataclass
-class OpenArg:
-    open: str
-    manifest_url: str
-    manifest_hash: str
+class MintParam:
+    to: address
+    amount: int
 
 @dataclass
-class ArtifactsArg:
-    artifacts_url: str
-    artifacts_hash: str
+class TransferParam:
+    to: address
+    amount: int
+
+def require(arg: bool) -> int:
+    _ = 0
+    if arg:
+        _ = 0
+    else:
+        raise "Error"
+
+    return 0
 
 class Contract:
     def deploy():
-        return Storage("{admin}", '', '', '', '', '', '')
+        return Storage({}, 0, "tz1VSUr8wwNhLAzempoch5d6hLRiTh8Cjcjb")
 
-    def open(params: OpenArg) -> Storage:
-        if self.sender != self.storage.admin:
-            raise "Only owner can call open"
+    def mint(param: MintParam) -> Storage:
+        _ = require(self.sender == self.storage.admin)
 
-        self.storage.open = params.open
-        self.storage.manifest_url = params.manifest_url
-        self.storage.manifest_hash = params.manifest_hash
+        self.storage.total_supply = self.storage.total_supply + param.amount
 
-        return self.storage
+        balances = self.storage.balances
 
-    def close(params: str) -> Storage:
-        if self.sender != self.storage.admin:
-            raise "Only owner can call close"
+        if param.to in balances:
+            balances[param.to] = balances[param.to] + param.amount
+        else:
+            balances[param.to] = param.amount
 
-        self.storage.close = params
+        self.storage.balances = balances
 
         return self.storage
 
-    def artifacts(params: ArtifactsArg) -> Storage:
-        if self.sender != self.storage.admin:
-            raise "Only owner can call artifacts"
+    def transfer(param: TransferParam) -> Storage:
+        _ = require(self.sender == self.storage.admin)
+        _ = require(param.amount > 0)
 
-        self.storage.artifacts_url = params.artifacts_url
-        self.storage.artifacts_hash = params.artifacts_hash
+        balances = self.storage.balances
+
+        sender_balance = balances[self.sender]
+        _ = require(sender_balance >= param.amount)
+
+        balances[self.sender] = sender_balance - param.amount
+
+        if param.to in balances:
+            balances[param.to] = balances[param.to] + param.amount
+        else:
+            balances[param.to] = param.amount
+
+        self.storage.balances = balances
 
         return self.storage
 """
+
 vm = VM(isDebug=False)
 c = Compiler(source, isDebug=False)
 instructions = c._compile(c.ast)

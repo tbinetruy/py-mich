@@ -74,9 +74,9 @@ class TypeParser:
         raise NotImplementedError
 
     def parse_dict(self, dictionary: ast.Subscript, e, annotation):
-        key_type = self.parse(dictionary.slice.value.elts[0], e, annotation)
-        value_type = self.parse(dictionary.slice.value.elts[1], e, annotation)
-        return Dict(key_type, value_type)
+        key_type = self.parse(dictionary.slice.value.elts[0], e)
+        value_type = self.parse(dictionary.slice.value.elts[1], e)
+        return Dict(key_type, value_type, annotation)
 
     def parse_subscript(self, subscript: ast.Dict, e, annotation):
         if subscript.value.id == "Dict":

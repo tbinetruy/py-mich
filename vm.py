@@ -110,13 +110,23 @@ class VM:
             "UPDATE": self.update,
             "IF_NONE": self.if_none,
             "SOME": self.some,
+            "NONE": self.none,
+            "MEM": self.mem,
         }
+
+    def mem(self):
+        key = self.pop()
+        dictionary = self.pop()
+        self._push(key in dictionary)
 
     def some(self):
         val = self.pop()
         self._push(Some(val))
 
-    def empty_map(self, key_type, value_type):
+    def none(self, none_type: t.Type):
+        self._push(None)
+
+    def empty_map(self, key_type: t.Type, value_type: t.Type):
         self._push({})
 
     def get(self):
@@ -131,18 +141,18 @@ class VM:
         key = self.pop()
         optional = self.pop()
         mapping = self.pop()
-        self._assert_type(type(optional), [Some, None], "Update requires an Option typed value")
+        self._assert_type(type(optional), [Some, type(None)], "Update requires an Option typed value")
         if type(optional) == Some:
             mapping[key] = optional.value
             self._push(mapping)
-        elif type(optional) == None:
+        elif type(optional) == type(None):
             del mapping[key]
             self._push(mapping)
 
     def if_none(self, cond_true, cond_false):
         option = self.pop()
-        self._assert_type(type(option), [Some, None], "If_none requires an Option typed value")
-        if type(option) == None:
+        self._assert_type(type(option), [Some, type(None)], "If_none requires an Option typed value")
+        if type(option) == type(None):
             self._run_instructions(cond_true)
         elif type(option) == Some:
             self._push(option.value)
@@ -540,18 +550,81 @@ class TestVM(unittest.TestCase):
         vm._run_instructions(instructions)
         self.assertEqual(vm.stack, [Some(1)])
 
+    def test_none(self):
+        vm = VM()
+        instructions = [
+            Instr("NONE", [t.Int], {})
+        ]
+        vm._run_instructions(instructions)
+        self.assertEqual(vm.stack, [None])
+
+    def test_if_none(self):
+        vm = VM()
+        instructions = [
+            Instr("PUSH", [t.Int, 1], {}),
+            Instr("SOME", [], {}),
+            Instr("IF_NONE", [
+                [
+                    Instr("FAILWITH", [], {}),
+                ],
+                [
+                    Instr("PUSH", [t.Int, 1], {}),
+                    Instr("ADD", [], {}),
+                ]
+            ], {}),
+        ]
+        vm._run_instructions(instructions)
+        self.assertEqual(vm.stack, [2])
+        vm.stack = []
+
+        error_message = "Error"
+        instructions = [
+            Instr("NONE", [t.Int], {}),
+            Instr("IF_NONE", [
+                [
+                    Instr("PUSH", [t.String, error_message], {}),
+                    Instr("FAILWITH", [], {}),
+                ],
+                [
+                    Instr("PUSH", [t.Int, 1], {}),
+                    Instr("ADD", [], {}),
+                ]
+            ], {}),
+        ]
+        try:
+            vm._run_instructions(instructions)
+        except VMFailwithException as e:
+            assert e.message == error_message
+
     def test_empty_map(self):
         vm = VM()
         instructions = [
-            Instr("EMPTY_MAP", [], {})
+            Instr("EMPTY_MAP", [t.Int, t.Int], {})
         ]
         vm._run_instructions(instructions)
         self.assertEqual(vm.stack, [{}])
 
-    def test_update(self):
+    def test_mem(self):
         vm = VM()
         instructions = [
-            Instr("EMPTY_MAP", [], {}),
+            Instr("PUSH", [t.Int, 1], {}),
+            Instr("MEM", [], {})
+        ]
+        vm._push({})
+        vm._run_instructions(instructions)
+        self.assertEqual(vm.stack, [False])
+
+        vm.stack = [{1: 1}]
+
+        vm._run_instructions(instructions)
+        self.assertEqual(vm.stack, [True])
+
+    def test_update(self):
+        vm = VM()
+
+        # Add key/value
+        instructions = [
+            Instr("EMPTY_MAP", [t.Int, t.Int], {}),
             Instr("PUSH", [t.Int, 2], {}),  # Value
             Instr("SOME", [], {}),
             Instr("PUSH", [t.Int, 1], {}),  # Key
@@ -560,10 +633,19 @@ class TestVM(unittest.TestCase):
         vm._run_instructions(instructions)
         self.assertEqual(vm.stack, [{1: 2}])
 
+        # Remove key/value
+        instructions = [
+            Instr("NONE", [t.Int], {}),     # Value
+            Instr("PUSH", [t.Int, 1], {}),  # Key
+            Instr("UPDATE", [], {})
+        ]
+        vm._run_instructions(instructions)
+        self.assertEqual(vm.stack, [{}])
+
     def test_get(self):
         vm = VM()
         instructions = [
-            Instr("EMPTY_MAP", [], {}),
+            Instr("EMPTY_MAP", [t.Int, t.Int], {}),
             Instr("PUSH", [t.Int, 2], {}),  # Value
             Instr("SOME", [], {}),
             Instr("PUSH", [t.Int, 1], {}),  # Key

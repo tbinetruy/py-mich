@@ -30,6 +30,10 @@ class CompilerBackend:
             micheline = {
                 "prim": "address",
             }
+        elif type(parameter) == t.Bool:
+            micheline = {
+                "prim": "bool",
+            }
         elif type(parameter) == Pair:
             micheline = {
                 "prim": "pair",
@@ -42,8 +46,8 @@ class CompilerBackend:
             micheline = {
                 "prim": "map",
                 "args": [
-                    {"prim": self.compile_type(t.key_type)},
-                    {"prim": self.compile_type(t.value_type)},
+                    self.compile_type(parameter.key_type),
+                    self.compile_type(parameter.value_type),
                 ]
             }
         else:
@@ -60,6 +64,10 @@ class CompilerBackend:
     def compile_instruction(self, instruction: Instr):
         if instruction.name == "ADD":
             return {"prim": "ADD"}
+        if instruction.name == "SUB":
+            return {"prim": "SUB"}
+        if instruction.name == "MEM":
+            return {"prim": "MEM"}
         elif instruction.name == "CAR":
             return {"prim": "CAR"}
         elif instruction.name == "CDR":
@@ -119,11 +127,27 @@ class CompilerBackend:
             return {"prim": "LE"}
         elif instruction.name == "GE":
             return {"prim": "GE"}
+        elif instruction.name == "GET":
+            return {"prim": "GET"}
         elif instruction.name == "FAILWITH":
             return {"prim": "FAILWITH"}
+        elif instruction.name == "SOME":
+            return {"prim": "SOME"}
+        elif instruction.name == "NONE":
+            return {"prim": "NONE"}
+        elif instruction.name == "UPDATE":
+            return {"prim": "UPDATE"}
         elif instruction.name == "IF":
             return {
                 "prim": "IF",
+                "args": [
+                    self.compile_instructions(instruction.args[0]),
+                    self.compile_instructions(instruction.args[1]),
+                ],
+            }
+        elif instruction.name == "IF_NONE":
+            return {
+                "prim": "IF_NONE",
                 "args": [
                     self.compile_instructions(instruction.args[0]),
                     self.compile_instructions(instruction.args[1]),

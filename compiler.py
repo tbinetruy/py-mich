@@ -8,7 +8,7 @@ import instr_types as t
 from helpers import Tree, ast_to_tree
 from vm import VM, VMFailwithException
 from vm_types import (Array, Contract, Entrypoint, FunctionPrototype, Instr,
-                      Pair)
+                      Pair, Some)
 
 
 class CompilerError(Exception):
@@ -295,9 +295,11 @@ class Compiler:
         key = self._compile(assign_subscript.targets[0].slice.value, e)
         e.sp -= 2  # account for update dropping the key and value from the stack
         dictionary_name = assign_subscript.targets[0].value.id
+        dict_addr = e.vars[dictionary_name]
         free_old_dict, _ = self.free_var(dictionary_name, e)
-        e.vars[dictionary_name] = e.sp
-        return dictionary + value + [Instr("SOME", [], {})] +  key + [Instr("UPDATE", [], {})] + free_old_dict
+        replace_old_dict = [Instr("DUG", [e.sp - dict_addr], {})]
+        e.vars[dictionary_name] = dict_addr
+        return dictionary + value + [Instr("SOME", [], {})] +  key + [Instr("UPDATE", [], {})] + free_old_dict + replace_old_dict
 
     @debug
     def compile_assign(self, assign: ast.Assign, e: Env) -> List[Instr]:
@@ -743,6 +745,10 @@ class Compiler:
             operator_instructions = [Instr("LE", [], {})]
         elif operator_type == ast.GtE:
             operator_instructions = [Instr("GE", [], {})]
+        elif operator_type == ast.In:
+            # remove COMPARE instruction
+            del compare_instructions[-1]
+            operator_instructions = [Instr("MEM", [], {})]
         else:
             return NotImplementedError
 
@@ -761,6 +767,22 @@ class Compiler:
 
     def compile_raise(self, raise_ast: ast.Raise, e: Env) -> List[Instr]:
         return self._compile(raise_ast.exc, e) + [Instr("FAILWITH", [], {})]
+
+    def compile_subscript(self, subscript: ast.Subscript, e: Env) -> List[Instr]:
+        dictionary = self._compile(subscript.value, e)
+        key = self._compile(subscript.slice.value, e)
+        e.sp -= 1  # account for get
+        get_instructions = [
+            Instr("GET", [], {}),
+            Instr("IF_NONE", [
+                [
+                    Instr("PUSH", [t.String(), "Key does not exist"], {}),
+                    Instr("FAILWITH", [], {})
+                ],
+                [],
+            ], {}),
+        ]
+        return dictionary + key + get_instructions
 
     def compile(self):
         return self._compile(self.ast)
@@ -825,6 +847,8 @@ class Compiler:
                 raise NotImplementedError
         elif type(node_ast) == ast.Dict:
             instructions += self.compile_dict(node_ast, current_type.key_type, current_type.value_type, e)
+        elif type(node_ast) == ast.Subscript:
+            instructions += self.compile_subscript(node_ast, e)
         else:
             breakpoint()
             raise NotImplementedError
@@ -841,7 +865,7 @@ class Compiler:
 
 
 class TestDict(unittest.TestCase):
-    def test_creates_dict(self):
+    def test_get_dict_no_key_error(self):
         source = """
 @dataclass
 class Storage:
@@ -850,13 +874,105 @@ class Storage:
 
 storage = Storage({}, "owner")
 balances = storage.balances
-balances['Mr. Foobar'] = 100
+user = 'Mr. Foobar'
+balances[user] = 100
+balances[user]
         """
         c = Compiler(source)
         instructions = c.compile()
         vm = VM()
         vm._run_instructions(instructions)
         self.assertEqual(vm.stack[1], {'Mr. Foobar': 100})
+        self.assertEqual(vm.stack[3], 100)
+
+
+    def test_key_in_dict(self):
+        source = """
+@dataclass
+class Storage:
+    balances: Dict[str, int]
+    owner: str
+
+storage = Storage({}, "owner")
+balances = storage.balances
+user = 'Mr. Foobar'
+balances[user] = 100
+user in balances
+        """
+        c = Compiler(source)
+        instructions = c.compile()
+        vm = VM()
+        vm._run_instructions(instructions)
+        self.assertEqual(vm.stack[3], True)
+
+    def test_get_dict_key_error(self):
+        source = """
+@dataclass
+class Storage:
+    balances: Dict[str, int]
+    owner: str
+
+storage = Storage({}, "owner")
+balances = storage.balances
+user = 'Mr. Foobar'
+balances[user] = 100
+balances['user']
+        """
+        c = Compiler(source)
+        instructions = c.compile()
+        vm = VM()
+        try:
+            vm._run_instructions(instructions)
+            assert 0
+        except VMFailwithException as e:
+            assert e.message == "Key does not exist"
+
+    def test_dataclass_entrypoint_param(self):
+        source = """
+@dataclass
+class Storage:
+    balances: Dict[address, int]
+    total_supply: int
+
+@dataclass
+class ChangeSupplyParam:
+    to: address
+    amount: int
+
+class Contract:
+    def deploy():
+        return Storage({}, 0)
+
+    def mint(param: ChangeSupplyParam) -> Storage:
+        self.storage.total_supply = self.storage.total_supply + param.amount
+
+        balances = self.storage.balances
+
+        if param.to in balances:
+            balances[param.to] = balances[param.to] + param.amount
+        else:
+            balances[param.to] = param.amount
+
+        self.storage.balances = balances
+
+        return self.storage
+
+    def burn(param: ChangeSupplyParam) -> Storage:
+        self.storage.total_supply = self.storage.total_supply - param.amount
+        return self.storage
+        """
+        vm = VM(isDebug=False)
+        c = Compiler(source, isDebug=False)
+        c.compile()
+        contract = c.contract
+        tr_to, amount = "tz1FooBar", 10
+        vm.run_contract(contract, "mint", Pair(tr_to, amount))
+        self.assertEqual(contract.storage, Pair({tr_to: amount}, amount))
+        self.assertEqual(vm.stack, [])
+
+        vm.run_contract(contract, "mint", Pair(tr_to, amount))
+        self.assertEqual(contract.storage, Pair({tr_to: amount * 2}, amount * 2))
+        self.assertEqual(vm.stack, [])
 
 
 class TestRecord(unittest.TestCase):
