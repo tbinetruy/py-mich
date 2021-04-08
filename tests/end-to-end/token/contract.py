@@ -1,5 +1,6 @@
-from typing import Dict
 from dataclasses import dataclass
+from typing import Dict
+
 address = str
 
 
@@ -22,37 +23,26 @@ class Contract:
         self.storage = Storage({}, 0, admin)
         self.sender = sender
 
-    def mint(self, to: address, amount: int) -> Storage:
+    def mint(self, to: address, amount: int):
         _ = require(self.sender == self.storage.admin)
 
         self.storage.total_supply = self.storage.total_supply + amount
 
-        balances = self.storage.balances
-
-        if to in balances:
-            balances[to] = balances[to] + amount
+        if to in self.storage.balances:
+            self.storage.balances[to] = self.storage.balances[to] + amount
         else:
-            balances[to] = amount
+            self.storage.balances[to] = amount
 
-        self.storage.balances = balances
+    def transfer(self, to: address, amount: int):
+        _ = require(
+            self.sender == self.storage.admin
+            and amount > 0
+            and self.storage.balances[self.sender] >= amount
+        )
 
-        return self.storage
+        self.storage.balances[self.sender] = self.storage.balances[self.sender] - amount
 
-    def transfer(self, to: address, amount: int) -> Storage:
-        _ = require(self.sender == self.storage.admin and amount > 0)
-
-        balances = self.storage.balances
-
-        sender_balance = balances[self.sender]
-        _ = require(sender_balance >= amount)
-
-        balances[self.sender] = sender_balance - amount
-
-        if to in balances:
-            balances[to] = balances[to] + amount
+        if to in self.storage.balances:
+            self.storage.balances[to] = self.storage.balances[to] + amount
         else:
-            balances[to] = amount
-
-        self.storage.balances = balances
-
-        return self.storage
+            self.storage.balances[to] = amount
