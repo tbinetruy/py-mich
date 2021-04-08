@@ -1,63 +1,57 @@
+from typing import Dict
+from dataclasses import dataclass
+address = str
+
+
 @dataclass
 class Storage:
     balances: Dict[address, int]
     total_supply: int
     admin: address
 
-@dataclass
-class MintParam:
-    to: address
-    amount: int
 
-@dataclass
-class TransferParam:
-    to: address
-    amount: int
-
-def require(arg: bool) -> int:
-    _ = 0
-    if arg:
-        _ = 0
-    else:
-        raise "Error"
+def require(condition: bool) -> int:
+    if not condition:
+        raise Exception("Error")
 
     return 0
 
-class Contract:
-    def deploy():
-        return Storage({}, 0, "tz1VSUr8wwNhLAzempoch5d6hLRiTh8Cjcjb")
 
-    def mint(param: MintParam) -> Storage:
+class Contract:
+    def __init__(self, admin, sender):
+        self.storage = Storage({}, 0, admin)
+        self.sender = sender
+
+    def mint(self, to: address, amount: int) -> Storage:
         _ = require(self.sender == self.storage.admin)
 
-        self.storage.total_supply = self.storage.total_supply + param.amount
+        self.storage.total_supply = self.storage.total_supply + amount
 
         balances = self.storage.balances
 
-        if param.to in balances:
-            balances[param.to] = balances[param.to] + param.amount
+        if to in balances:
+            balances[to] = balances[to] + amount
         else:
-            balances[param.to] = param.amount
+            balances[to] = amount
 
         self.storage.balances = balances
 
         return self.storage
 
-    def transfer(param: TransferParam) -> Storage:
-        _ = require(self.sender == self.storage.admin)
-        _ = require(param.amount > 0)
+    def transfer(self, to: address, amount: int) -> Storage:
+        _ = require(self.sender == self.storage.admin and amount > 0)
 
         balances = self.storage.balances
 
         sender_balance = balances[self.sender]
-        _ = require(sender_balance >= param.amount)
+        _ = require(sender_balance >= amount)
 
-        balances[self.sender] = sender_balance - param.amount
+        balances[self.sender] = sender_balance - amount
 
-        if param.to in balances:
-            balances[param.to] = balances[param.to] + param.amount
+        if to in balances:
+            balances[to] = balances[to] + amount
         else:
-            balances[param.to] = param.amount
+            balances[to] = amount
 
         self.storage.balances = balances
 
