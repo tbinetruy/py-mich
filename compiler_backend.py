@@ -51,6 +51,7 @@ class CompilerBackend:
                 ]
             }
         else:
+            breakpoint()
             return NotImplementedError
 
         try:
@@ -109,6 +110,10 @@ class CompilerBackend:
             return_type = self.compile_type(instruction.args[1])
             body = self.compile_instructions(instruction.args[2])
             return {"prim": "LAMBDA", "args": [arg_type, return_type, body]}
+        elif instruction.name == "EMPTY_MAP":
+            key_type = self.compile_type(instruction.args[0])
+            value_type = self.compile_type(instruction.args[1])
+            return {"prim": "EMPTY_MAP", "args": [key_type, value_type]}
         elif instruction.name == "CONS":
             return {"prim": "CONS"}
         elif instruction.name == "SENDER":
@@ -166,7 +171,6 @@ class CompilerBackend:
             raise NotImplementedError
 
     def compile_instructions(self, instructions: List[Instr]):
-        print(instructions)
         if type(instructions) != list:
             breakpoint()
         micheline = []
