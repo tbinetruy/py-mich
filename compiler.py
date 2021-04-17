@@ -1828,3 +1828,77 @@ for TestSuite in [
 
 if __name__ == "__main__":
     unittest.main()
+
+
+from pytezos.michelson.types.core import *
+from pytezos.michelson.instructions.stack import *
+from pytezos.michelson.micheline import MichelineLiteral
+
+push = PushInstruction.create_type(args=[IntType, MichelineLiteral.create(1)], annots=["%foo"])
+push.as_micheline_expr()
+# {'prim': 'PUSH', 'annots': ['%foo'], 'args': [{'prim': 'int'}, {'int': '1'}]}
+
+from pytezos.michelson.instructions.struct import *
+
+EmptyMapInstruction.create_type(args=[IntType, IntType]).as_micheline_expr()
+# {'prim': 'EMPTY_MAP', 'args': [{'prim': 'int'}, {'prim': 'int'}]}
+
+from pytezos.michelson.instructions.arithmetic import *
+from pytezos.michelson.instructions.control import *
+
+LambdaInstruction.create_type(args=[IntType, IntType, MichelineSequence.create_type([DupInstruction(), AddInstruction()])]).as_micheline_expr()
+# {'prim': 'LAMBDA',
+#  'args': [{'prim': 'int'},
+#   {'prim': 'int'},
+#   [{'prim': 'DUP'}, {'prim': 'ADD'}]]}
+
+
+f = LambdaInstruction.create_type(args=[IntType, IntType, MichelineSequence.create_type([DupInstruction(), AddInstruction()])])
+arg = MichelineLiteral.create(10)
+push = PushInstruction.create_type(args=[IntType, arg])
+exec = ExecInstruction.create_type(args=[])
+program = MichelineSequence.create_type(args=[f, push, exec])
+
+program.as_micheline_expr()
+# [{'prim': 'LAMBDA',
+#   'args': [{'prim': 'int'},
+#    {'prim': 'int'},
+#    [{'prim': 'DUP'}, {'prim': 'ADD'}]]},
+#  {'prim': 'PUSH', 'args': [{'prim': 'int'}, {'int': '10'}]},
+#  {'prim': 'EXEC'}]
+
+stack = MichelsonStack()
+result = InterpreterResult(stdout=[])
+context = ExecutionContext()
+program.execute(stack, result.stdout, context)
+
+stack
+# [20]
+
+result.stdout
+# ['LAMBDA / _ => Lambda',
+#  'PUSH / _ => 10',
+#  'EXEC / 10 : Lambda => _',
+#  'DUP / 10 => 10 : 10',
+#  'ADD / 10 : 10 => 20']
+
+from pytezos.michelson.sections.parameter import ParameterSection
+from pytezos.michelson.sections.storage import StorageSection
+
+from pytezos.michelson.types.operation import *
+from pytezos.michelson.instructions.struct import *
+
+from pytezos.michelson.instructions.adt import *
+
+parameter_section = ParameterSection.create_type(args=[UnitType])
+storage_section = StorageSection.create_type(args=[IntType])
+code = [CdrInstruction, DupInstruction, MulInstruction, NilInstruction.create_type(args=[OperationType]), PairInstruction,]
+
+code_section = CodeSection.create_type(args=[MichelineSequence.create_type(args=code)])
+sequence = MichelineSequence.create_type(args=[parameter_section, storage_section, code_section])
+
+from pytezos.michelson.program import *
+program = MichelsonProgram.create(sequence)
+
+ci = ContractInterface.from_micheline(program.as_micheline_expr())
+assert ci.default().interpret(storage=10).storage == 10 * 10
