@@ -4,21 +4,32 @@ import unittest
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 
+from pytezos.context.impl import ExecutionContext
+from pytezos.michelson.instructions.adt import *
+from pytezos.michelson.instructions.arithmetic import *
+from pytezos.michelson.instructions.control import *
+from pytezos.michelson.instructions.stack import *
+from pytezos.michelson.instructions.struct import *
+from pytezos.michelson.micheline import MichelineLiteral, MichelsonRuntimeError
+from pytezos.michelson.program import *
+from pytezos.michelson.repl import InterpreterResult
+from pytezos.michelson.sections import CodeSection
+from pytezos.michelson.sections.parameter import ParameterSection
+from pytezos.michelson.sections.storage import StorageSection
+from pytezos.michelson.stack import MichelsonStack
+from pytezos.michelson.types import core
+from pytezos.michelson.types.core import *
+from pytezos.michelson.types.domain import AddressType
+from pytezos.michelson.types.map import MapType
+from pytezos.michelson.types.operation import *
+from pytezos.michelson.types.pair import PairType
+from pytezos import ContractInterface
+
 import instr_types as t
+from compiler_backend import CompilerBackend
 from helpers import Tree, ast_to_tree
-from vm import VM as OldVM, VMFailwithException
 from vm_types import (Array, Contract, Entrypoint, FunctionPrototype, Instr,
                       Pair, Some)
-
-from compiler_backend import CompilerBackend
-from pytezos.michelson.types import core
-from pytezos.michelson.types.domain import AddressType
-from pytezos.michelson.stack import MichelsonStack
-from pytezos.michelson.sections import CodeSection
-from pytezos.context.impl import ExecutionContext
-from pytezos.michelson.repl import InterpreterResult
-from pytezos.michelson.types.pair import PairType
-from pytezos.michelson.types.map import MapType
 
 
 class CompilerError(Exception):
@@ -654,17 +665,11 @@ class Compiler:
             storage_type = storage_ast.func.id
             e.types["__STORAGE__"] = storage_type
             self.contract.storage_type = e.records[storage_type].get_type()
-
-            # TODO fix this mess
-            vm = OldVM()
-            init_storage_instr = e.records[storage_type].compile_record(storage_ast.args, self._compile, self.get_init_env())
-            vm._run_instructions(init_storage_instr)
-            self.contract.storage = vm.stack[-1]
         else:
             return NotImplementedError
 
     @debug
-    def compile_contract(self, contract_ast: ast.ClassDef, e: Env, prologue_instructions: List[Instr]) -> List[Instr]:
+    def _compile_contract(self, contract_ast: ast.ClassDef, e: Env, prologue_instructions: List[Instr]) -> List[Instr]:
         instructions = []
         for entrypoint in contract_ast.body:
             if entrypoint.name == "deploy":
@@ -850,7 +855,7 @@ class Compiler:
             instructions += self.compile_fcall(node_ast, e)
         elif type(node_ast) == ast.ClassDef:
             if node_ast.name == "Contract":
-                instructions += self.compile_contract(node_ast, e, instructions)
+                instructions += self._compile_contract(node_ast, e, instructions)
             elif "dataclass" in [decorator.id for decorator in node_ast.decorator_list]:
                 instructions += self.compile_record(node_ast, e)
             else:
@@ -868,9 +873,13 @@ class Compiler:
 
         return instructions
 
-    def to_micheline(self):
+    def compile_expression(self):
         instructions = self._compile(self.ast)
         return CompilerBackend().compile_instructions(instructions)
+
+    def compile_contract(self):
+        self.compile()
+        return CompilerBackend().compile_contract(self.contract)
 
     @staticmethod
     def print_instructions(instructions):
@@ -887,6 +896,10 @@ class VM:
         self.result = InterpreterResult(stdout=[])
         code_section = CodeSection.match(micheline)
         code_section.args[0].execute(self.stack, self.result.stdout, self.context)
+        return self
+
+    def load_contract(self, micheline):
+        self.contract = ContractInterface.from_micheline(micheline)
         return self
 
     def reset_stack(self):
@@ -916,16 +929,15 @@ user = 'Mr. Foobar'
 balances[user] = 100
 balances[user]
         """
-        micheline = Compiler(source).to_micheline()
+        micheline = Compiler(source).compile_expression()
         vm = VM()
         vm.execute(micheline)
-        expected_int = core.IntType(100)
-        expected_string = core.StringType('Mr. Foobar')
+        expected_int = IntType(100)
+        expected_string = StringType('Mr. Foobar')
         expected_map = MapType([(expected_string, expected_int)])
-        expected_pair = PairType((MapType([]), core.StringType("owner")))
+        expected_pair = PairType((MapType([]), StringType("owner")))
         expected_stack = [expected_int, expected_string, expected_map, expected_pair]
         self.assertEqual(vm.stack.items, expected_stack)
-
 
 
     def test_key_in_dict(self):
@@ -941,11 +953,16 @@ user = 'Mr. Foobar'
 balances[user] = 100
 user in balances
         """
-        c = Compiler(source)
-        instructions = c.compile()
-        vm = OldVM()
-        vm._run_instructions(instructions)
-        self.assertEqual(vm.stack[3], True)
+        micheline = Compiler(source).compile_expression()
+        vm = VM()
+        vm.execute(micheline)
+        expected_string = StringType('Mr. Foobar')
+        expected_int = IntType(100)
+        expected_map = MapType([(expected_string, expected_int)])
+        expected_pair = PairType((MapType([]), StringType("owner")))
+        expected_bool = BoolType(True)
+        expected_stack = [expected_bool, expected_string, expected_map, expected_pair]
+        self.assertEqual(vm.stack.items, expected_stack)
 
     def test_get_dict_key_error(self):
         source = """
@@ -960,61 +977,13 @@ user = 'Mr. Foobar'
 balances[user] = 100
 balances['user']
         """
-        c = Compiler(source)
-        instructions = c.compile()
-        vm = OldVM()
+        micheline = Compiler(source).compile_expression()
+        vm = VM()
         try:
-            vm._run_instructions(instructions)
+            vm.execute(micheline)
             assert 0
-        except VMFailwithException as e:
-            assert e.message == "Key does not exist"
-
-    def test_dataclass_entrypoint_param(self):
-        source = """
-@dataclass
-class Storage:
-    balances: Dict[address, int]
-    total_supply: int
-
-@dataclass
-class ChangeSupplyParam:
-    to: address
-    amount: int
-
-class Contract:
-    def deploy():
-        return Storage({}, 0)
-
-    def mint(param: ChangeSupplyParam) -> Storage:
-        self.storage.total_supply = self.storage.total_supply + param.amount
-
-        balances = self.storage.balances
-
-        if param.to in balances:
-            balances[param.to] = balances[param.to] + param.amount
-        else:
-            balances[param.to] = param.amount
-
-        self.storage.balances = balances
-
-        return self.storage
-
-    def burn(param: ChangeSupplyParam) -> Storage:
-        self.storage.total_supply = self.storage.total_supply - param.amount
-        return self.storage
-        """
-        vm = OldVM(isDebug=False)
-        c = Compiler(source, isDebug=False)
-        c.compile()
-        contract = c.contract
-        tr_to, amount = "tz1FooBar", 10
-        vm.run_contract(contract, "mint", Pair(tr_to, amount))
-        self.assertEqual(contract.storage, Pair({tr_to: amount}, amount))
-        self.assertEqual(vm.stack, [])
-
-        vm.run_contract(contract, "mint", Pair(tr_to, amount))
-        self.assertEqual(contract.storage, Pair({tr_to: amount * 2}, amount * 2))
-        self.assertEqual(vm.stack, [])
+        except MichelsonRuntimeError as e:
+            self.assertEqual(e.format_stdout(), "FAILWITH: 'Key does not exist'")
 
 
 class TestRecord(unittest.TestCase):
@@ -1036,11 +1005,10 @@ c = 6
 my_storage = Storage(1, a, 3, b, 5, c)
 my_storage.{attribute_name}
 """
-            c = Compiler(source)
-            instructions = c.compile()
-            vm = OldVM()
-            vm._run_instructions(instructions)
-            self.assertEqual(vm.stack[-1], stack_top_value)
+            micheline = Compiler(source).compile_expression()
+            vm = VM()
+            vm.execute(micheline)
+            self.assertEqual(vm.stack.peek(), IntType(stack_top_value))
 
         test("a", 1)
         test("b", 2)
@@ -1067,24 +1035,36 @@ my_storage = Storage(1, a, 3, b, 5, c)
 d = 7
 my_storage # get storage
 """
-        c = Compiler(source)
-        instructions = c.compile()
-        vm = OldVM()
-        vm._run_instructions(instructions)
-        self.assertEqual(vm.stack[-1], Pair(Pair(Pair(1, 2), Pair(3, 4)), Pair(5, 6)))
+        micheline = Compiler(source).compile_expression()
+        vm = VM()
+        vm.execute(micheline)
+        pair_1 = PairType((IntType(1), IntType(2)))
+        pair_2 = PairType((IntType(3), IntType(4)))
+        pair_3 = PairType((IntType(5), IntType(6)))
+        expected_record = PairType((PairType((pair_1, pair_2)), pair_3))
+        self.assertEqual(vm.stack.peek(), expected_record)
 
     def test_get_record_entry(self):
         attribute_names = ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l"]
-        attribute_types = [t.Int() for _ in attribute_names]
-        record = Record(attribute_names, attribute_types)
         attribute_values = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
-        build_record_instructions = record.build_record(attribute_values)
-        for i in range(0, len(attribute_values)):
-            vm = OldVM()
-            vm._run_instructions(build_record_instructions)
-            get_record_entry = record.navigate_to_tree_leaf(attribute_names[i])
-            vm._run_instructions(get_record_entry)
-            self.assertEqual(vm.stack, [attribute_values[i]])
+
+        def make_source(attribute_to_get):
+            source = "@dataclass\nclass Record:\n"
+            for attribute_name in attribute_names:
+                source += f"    {attribute_name}: int\n"
+            source += "record = Record("
+            for attribute_value in attribute_values:
+                source += f"{attribute_value}, "
+            source += f")\nrecord.{attribute_to_get}"
+            return source
+
+        for attribute_name, attribute_value in zip(attribute_names, attribute_values):
+            source = make_source(attribute_name)
+            micheline = Compiler(source).compile_expression()
+            vm = VM()
+            vm.execute(micheline)
+            self.assertEqual(vm.stack.peek(), IntType(attribute_value))
+
 
     def test_build_record(self):
         record = Record(["a", "b"], [t.Int(), t.Int()])
@@ -1171,7 +1151,7 @@ my_storage # get storage
         )
 
 class TestContract(unittest.TestCase):
-    def test_dataclass_entrypoint_param(self):
+    def test_dataclass_entrypoint_param_1(self):
         source = f"""
 @dataclass
 class AddParam:
@@ -1188,13 +1168,61 @@ class Contract:
     def sub(x: int) -> int:
         return x
         """
-        vm = OldVM(isDebug=False)
-        c = Compiler(source, isDebug=False)
-        c.compile()
-        contract = c.contract
-        vm.run_contract(contract, "add", Pair(2, 3))
-        self.assertEqual(contract.storage, 5)
-        self.assertEqual(vm.stack, [])
+        micheline = Compiler(source).compile_contract()
+        vm = VM()
+        vm.load_contract(micheline)
+        init_storage = vm.contract.storage.dummy()
+        expected_storage = 5
+        actual_storage = vm.contract.add({"x": 2, "y": 3}).interpret(storage=init_storage).storage
+        self.assertEqual(actual_storage, expected_storage)
+
+    def test_dataclass_entrypoint_param_2(self):
+        source = """
+@dataclass
+class Storage:
+    balances: Dict[address, int]
+    total_supply: int
+
+@dataclass
+class ChangeSupplyParam:
+    to: address
+    amount: int
+
+class Contract:
+    def deploy():
+        return Storage({}, 0)
+
+    def mint(param: ChangeSupplyParam) -> Storage:
+        self.storage.total_supply = self.storage.total_supply + param.amount
+
+        balances = self.storage.balances
+
+        if param.to in balances:
+            balances[param.to] = balances[param.to] + param.amount
+        else:
+            balances[param.to] = param.amount
+
+        self.storage.balances = balances
+
+        return self.storage
+
+    def burn(param: ChangeSupplyParam) -> Storage:
+        self.storage.total_supply = self.storage.total_supply - param.amount
+        return self.storage
+        """
+        micheline = Compiler(source).compile_contract()
+        vm = VM()
+        vm.load_contract(micheline)
+        init_storage = vm.contract.storage.dummy()
+        tr_to, amount = vm.context.sender, 10
+        new_storage = vm.contract.mint({"to": tr_to, "amount": amount}).interpret(storage=init_storage).storage
+        expected_storage = {
+            "balances": {
+                tr_to: amount,
+            },
+            "total_supply": 10,
+        }
+        self.assertEqual(new_storage, expected_storage)
 
     def test_condition_in_function(self):
         source = f"""
@@ -1222,19 +1250,18 @@ class Contract:
     def sub(x: int) -> int:
         return x
         """
-        vm = OldVM(isDebug=False)
-        c = Compiler(source, isDebug=False)
-        c.compile()
-        contract = c.contract
-        vm.run_contract(contract, "add", Pair(2, 2))
-        self.assertEqual(contract.storage, 8)
-        self.assertEqual(vm.stack, [])
-        vm.run_contract(contract, "add", Pair(2, 3))
-        self.assertEqual(contract.storage, 15)
-        self.assertEqual(vm.stack, [])
+        micheline = Compiler(source).compile_contract()
+        vm = VM()
+        vm.load_contract(micheline)
+        init_storage = vm.contract.storage.dummy()
+        new_storage = vm.contract.add({"x": 2, "y": 2}).interpret(storage=init_storage).storage
+        self.assertEqual(new_storage, 8)
+        new_storage = vm.contract.add({"x": 2, "y": 3}).interpret(storage=init_storage).storage
+        self.assertEqual(new_storage, 15)
 
     def test_function(self):
-        admin =  "tzaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        vm = VM()
+        admin = vm.context.sender
         source = f"""
 @dataclass
 class Storage:
@@ -1263,7 +1290,7 @@ class Contract:
         return Storage("{admin}", 0)
 
     def add(param: int) -> Storage:
-        _ = require(RequireArg(self.sender == self.storage.admin, "Only owner can call open"))
+        # TODO _ = require(RequireArg(self.sender == self.storage.admin, "Only owner can call open"))
 
         self.storage.counter = self.storage.counter + param
         return self.storage
@@ -1276,25 +1303,41 @@ class Contract:
         return self.storage
 
     def quintuple(param: int) -> Storage:
-        _ = require(RequireArg(self.sender == self.storage.admin, "Only owner can call open"))
+        # TODO _ = require(RequireArg(self.sender == self.storage.admin, "Only owner can call open"))
 
         self.storage.counter = double(self.storage.counter) + triple(self.storage.counter)
         return self.storage
         """
-        vm = OldVM(isDebug=False, sender=admin)
-        c = Compiler(source, isDebug=False)
-        c.compile()
-        contract = c.contract
-        vm.run_contract(contract, "add", 1)
-        self.assertEqual(contract.storage, Pair(admin, 1))
-        self.assertEqual(vm.stack, [])
-        vm.run_contract(contract, "sub", 1)
-        self.assertEqual(contract.storage, Pair(admin, 0))
-        self.assertEqual(vm.stack, [])
-        vm.run_contract(contract, "add", 1)
-        vm.run_contract(contract, "quintuple", 1)
-        self.assertEqual(contract.storage, Pair(admin, 5))
-        self.assertEqual(vm.stack, [])
+        micheline = Compiler(source).compile_contract()
+        vm.load_contract(micheline)
+        init_storage = vm.contract.storage.dummy()
+        init_storage['admin'] = admin
+        new_storage = vm.contract.add(1).interpret(storage=init_storage, sender=vm.context.sender).storage
+        expected_storage = {
+            'admin': admin,
+            'counter': 1,
+        }
+        self.assertEqual(new_storage, expected_storage)
+
+        init_storage = expected_storage
+        new_storage = vm.contract.sub(1).interpret(storage=init_storage, sender=vm.context.sender).storage
+        expected_storage = {
+            'admin': admin,
+            'counter': 0,
+        }
+        self.assertEqual(new_storage, expected_storage)
+
+        init_storage = expected_storage
+        init_storage['counter'] = 1
+
+        new_storage = vm.contract.quintuple(1).interpret(storage=init_storage, sender=vm.context.sender).storage
+        expected_storage = {
+            'admin': admin,
+            'counter': 5,
+        }
+        self.assertEqual(new_storage, expected_storage)
+
+
 
     def test_election(self):
         admin =  "tzaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -1345,29 +1388,33 @@ class Contract:
 
         return self.storage
         """
-        vm = OldVM(isDebug=False, sender=admin)
-        c = Compiler(source, isDebug=False)
-        instructions = c._compile(c.ast)
-        vm.run_contract(c.contract, "open", Pair(Pair("foo", "bar"), "baz"))
-        expected_storage = Pair(Pair(Pair(admin, 'bar'), Pair('baz', 'foo')), Pair(Pair('', ''), ''))
-        self.assertEqual(c.contract.storage, expected_storage)
+        micheline = Compiler(source).compile_contract()
+        vm = VM()
+        vm.load_contract(micheline)
+        init_storage = vm.contract.storage.dummy()
+        init_storage['admin'] = vm.context.sender
 
-        vm.sender = "foobar"
         try:
-            vm.run_contract(c.contract, "open", Pair(Pair("foo", "bar"), "baz"))
+            vm.contract.open({"open": "foo", "manifest_url": "bar", "manifest_hash": "baz"}).interpret(storage=init_storage)
             assert 0
-        except VMFailwithException as e:
-            assert e.message == "Only owner can call open"
+        except MichelsonRuntimeError as e:
+            self.assertEqual(e.format_stdout(), "FAILWITH: 'Only owner can call open'")
 
-        vm.run_contract(c.contract, "close", "foobar")
-        comp = c
-        expected_storage = Pair(Pair(Pair(admin, 'bar'), Pair('baz', 'foo')), Pair(Pair('foobar', ''), ''))
-        self.assertEqual(c.contract.storage, expected_storage)
+        new_storage = vm.contract.open({"open": "foo", "manifest_url": "bar", "manifest_hash": "baz"}).interpret(storage=init_storage, sender=vm.context.sender).storage
+        expected_storage = init_storage.copy()
+        expected_storage["open"] = "foo"
+        expected_storage["manifest_url"] = "bar"
+        expected_storage["manifest_hash"] = "baz"
+        self.assertEqual(new_storage, expected_storage)
 
-        vm.run_contract(c.contract, "artifacts", Pair('foo', 'bar'))
-        comp = c
-        expected_storage = Pair(Pair(Pair(admin, 'bar'), Pair('baz', 'foo')), Pair(Pair('foobar', 'foo'), 'bar'))
-        self.assertEqual(c.contract.storage, expected_storage)
+        expected_storage["close"] = "foobar"
+        new_storage = vm.contract.close("foobar").interpret(storage=new_storage, sender=vm.context.sender).storage
+        self.assertEqual(new_storage, expected_storage)
+
+        new_storage = vm.contract.artifacts({"artifacts_url": "1", "artifacts_hash": "2"}).interpret(storage=new_storage, sender=vm.context.sender).storage
+        expected_storage["artifacts_url"] = "1"
+        expected_storage["artifacts_hash"] = "2"
+        self.assertEqual(new_storage, expected_storage)
 
     def test_attribute_reassign(self):
         source = """
@@ -1393,22 +1440,27 @@ class Contract:
         self.storage.c = new_c
         return self.storage
         """
-        vm = OldVM(isDebug=False)
-        c = Compiler(source, isDebug=False)
-        instructions = c._compile(c.ast)
-        vm.run_contract(c.contract, "set_a", 10)
-        self.assertEqual(c.contract.storage, Pair(Pair(10, 2), 3))
+        micheline = Compiler(source).compile_contract()
+        vm = VM()
+        vm.load_contract(micheline)
+        init_storage = vm.contract.storage.dummy()
+        new_storage = vm.contract.set_a(10).interpret(storage=init_storage).storage
+        expected_storage = init_storage
+        expected_storage["a"] = 10
+        self.assertEqual(new_storage, expected_storage)
 
-        vm.run_contract(c.contract, "set_b", 20)
-        self.assertEqual(c.contract.storage, Pair(Pair(10, 20), 3))
+        new_storage = vm.contract.set_b(20).interpret(storage=expected_storage).storage
+        expected_storage["b"] = 20
+        self.assertEqual(new_storage, expected_storage)
 
-        vm.run_contract(c.contract, "set_c", 30)
-        self.assertEqual(c.contract.storage, Pair(Pair(10, 20), 30))
+        new_storage = vm.contract.set_c(30).interpret(storage=expected_storage).storage
+        expected_storage["c"] = 30
+        self.assertEqual(new_storage, expected_storage)
 
 
     def test_contract_final(self):
-        vm = OldVM(isDebug=False)
-        owner =  "tzaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        vm = VM()
+        owner = vm.context.sender
         source = f"""
 @dataclass
 class Storage:
@@ -1436,63 +1488,32 @@ class Contract:
         self.storage.name = new_name
         return self.storage
         """
-        c = Compiler(source, isDebug=False)
-        c._compile(c.ast)
+        micheline = Compiler(source).compile_contract()
+        vm = VM()
+        vm.load_contract(micheline)
+        init_storage = vm.contract.storage.dummy()
+
         try:
-            vm.run_contract(c.contract, "add", 1)
+            vm.contract.add(1).interpret(storage=init_storage).storage
             assert 0
-        except VMFailwithException:
-            assert 1
+        except MichelsonRuntimeError as e:
+            self.assertEqual(e.format_stdout(), "FAILWITH: 'input smaller than 10'")
 
-        vm.run_contract(c.contract, "add", 10)
-        self.assertEqual(c.contract.storage, Pair(Pair(owner, "foo"), 20))
-        self.assertEqual(vm.stack, [])
+        new_storage = vm.contract.add(10).interpret(storage=init_storage).storage
+        expected_storage = init_storage
+        expected_storage["counter"] = 20
+        self.assertEqual(new_storage, expected_storage)
 
-        new_owner = "tzbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-        vm.run_contract(c.contract, "update_owner", new_owner)
-        self.assertEqual(c.contract.storage, Pair(Pair(new_owner, "foo"), 20))
-        self.assertEqual(vm.stack, [])
+        ZERO_ADDRESS = "tz1burnburnburnburnburnburnburjAYjjX"
+        new_storage = vm.contract.update_owner(ZERO_ADDRESS).interpret(storage=new_storage).storage
+        expected_storage["owner"] = ZERO_ADDRESS
+        self.assertEqual(new_storage, expected_storage)
 
-        vm.run_contract(c.contract, "update_name", "bar")
-        self.assertEqual(c.contract.storage, Pair(Pair(new_owner, "bar"), 20))
-        self.assertEqual(vm.stack, [])
-
-    def test_contract_multitype_storage_with_condition(self):
-        source = """
-@dataclass
-class Storage:
-    owner: str
-    counter: int
-
-class Contract:
-    def deploy():
-        return Storage("foo", 0)
-
-    def add(a: int) -> int:
-        if a < 10:
-            raise 'input smaller than 10'
-
-        b = a + a
-        return Storage(self.storage.owner, self.storage.counter + b)
-
-    def update_owner(new_owner: str) -> int:
-        return Storage(new_owner, self.storage.counter)
-        """
-        vm = OldVM(isDebug=False)
-        c = Compiler(source, isDebug=False)
-        c._compile(c.ast)
-        try:
-            vm.run_contract(c.contract, "add", 1)
-            assert 0
-        except VMFailwithException:
-            assert 1
-
-        vm.run_contract(c.contract, "add", 10)
-        self.assertEqual(c.contract.storage, Pair("foo", 20))
-        self.assertEqual(vm.stack, [])
+        new_storage = vm.contract.update_name("bar").interpret(storage=new_storage).storage
+        expected_storage["name"] = "bar"
+        self.assertEqual(new_storage, expected_storage)
 
     def test_contract_multitype_storage(self):
-        vm = OldVM(isDebug=False)
         source = """
 @dataclass
 class Storage:
@@ -1509,18 +1530,21 @@ class Contract:
     def update_owner(new_owner: str) -> int:
         return Storage(new_owner, self.storage.counter)
         """
-        c = Compiler(source, isDebug=False)
-        c._compile(c.ast)
-        vm.run_contract(c.contract, "add", 10)
-        self.assertEqual(c.contract.storage, Pair("foo", 10))
-        self.assertEqual(vm.stack, [])
+        micheline = Compiler(source).compile_contract()
+        vm = VM()
+        vm.load_contract(micheline)
+        init_storage = vm.contract.storage.dummy()
 
-        vm.run_contract(c.contract, "update_owner", "bar")
-        self.assertEqual(c.contract.storage, Pair("bar", 10))
-        self.assertEqual(vm.stack, [])
+        new_storage = vm.contract.add(10).interpret(storage=init_storage).storage
+        expected_storage = init_storage
+        expected_storage["counter"] = 10
+        self.assertEqual(new_storage, expected_storage)
+
+        new_storage = vm.contract.update_owner("foo").interpret(storage=init_storage).storage
+        expected_storage["owner"] = "foo"
+        self.assertEqual(new_storage, expected_storage)
 
     def test_contract_storage(self):
-        vm = OldVM(isDebug=False)
         source = """
 @dataclass
 class Storage:
@@ -1539,18 +1563,21 @@ class Contract:
     def update_owner_id(new_id: int) -> int:
         return Storage(new_id, self.storage.counter)
         """
-        c = Compiler(source, isDebug=False)
-        c._compile(c.ast)
-        vm.run_contract(c.contract, "add", 10)
-        self.assertEqual(c.contract.storage, Pair(1, 20))
-        self.assertEqual(vm.stack, [])
+        micheline = Compiler(source).compile_contract()
+        vm = VM()
+        vm.load_contract(micheline)
+        init_storage = vm.contract.storage.dummy()
 
-        vm.run_contract(c.contract, "update_owner_id", 111)
-        self.assertEqual(c.contract.storage, Pair(111, 20))
-        self.assertEqual(vm.stack, [])
+        new_storage = vm.contract.add(10).interpret(storage=init_storage).storage
+        expected_storage = init_storage
+        expected_storage["counter"] = 20
+        self.assertEqual(new_storage, expected_storage)
+
+        new_storage = vm.contract.update_owner_id(10).interpret(storage=init_storage).storage
+        expected_storage["owner_id"] = 10
+        self.assertEqual(new_storage, expected_storage)
 
     def test_multi_entrypoint_contract(self):
-        vm = OldVM(isDebug=False)
         source = """
 class Contract:
     def incrementByTwo(a: int) -> int:
@@ -1560,59 +1587,49 @@ class Contract:
     def bar(b: int) -> int:
         return b
         """
-        c = Compiler(source, isDebug=False)
-        c._compile(c.ast)
-        vm.run_contract(c.contract, "incrementByTwo", 10)
-        self.assertEqual(c.contract.storage, 12)
-        self.assertEqual(vm.stack, [])
+        micheline = Compiler(source).compile_contract()
+        vm = VM()
+        vm.load_contract(micheline)
+        init_storage = vm.contract.storage.dummy()
 
-        c._compile(c.ast)
-        vm.run_contract(c.contract, "bar", 10)
-        self.assertEqual(c.contract.storage, 10)
-        self.assertEqual(vm.stack, [])
+        new_storage = vm.contract.incrementByTwo(10).interpret(storage=init_storage).storage
+        self.assertEqual(new_storage, 12)
 
-
-class TestCompilerUnit(unittest.TestCase):
-    def test_create_list(self):
-        vm = OldVM(isDebug=False)
-        source = "[]"
-        c = Compiler(source, isDebug=False)
-        instructions = c._compile(c.ast)
-        vm._run_instructions(instructions)
-        self.assertEqual(vm.stack[0].els, [])
-
-    def test_print_ast(self):
-        pass
+        new_storage = vm.contract.bar(10).interpret(storage=new_storage).storage
+        self.assertEqual(new_storage, 10)
 
 
 class TestCompilerList(unittest.TestCase):
-    def test_func_def(self):
-        vm = OldVM(isDebug=False)
+    def test_create_list(self):
+        source = "[]"
+        micheline = Compiler(source).compile_expression()
+        vm = VM()
+        vm.execute(micheline)
+        self.assertEqual([el.value for el in vm.stack.peek().items], [])
+
+    def test_list_instanciation(self):
         source = """
 [1, 2, 3]
         """
-        c = Compiler(source, isDebug=False)
-        instructions = c._compile(c.ast)
-        vm._run_instructions(instructions)
-        self.assertEqual(vm.stack, [Array([1, 2, 3])])
+        micheline = Compiler(source).compile_expression()
+        vm = VM()
+        vm.execute(micheline)
+        self.assertEqual([el.value for el in vm.stack.peek().items], [1, 2, 3])
 
 class TestCompilerAssign(unittest.TestCase):
     def test_reassign(self):
-        vm = OldVM(isDebug=False)
         source = """
 a = 1
 b = 2
 a = a + 2
         """
-        c = Compiler(source, isDebug=False)
-        instructions = c._compile(c.ast)
-        vm._run_instructions(instructions)
-        # TODO: make vm.stack == [1, 2]
-        #       and c.env.vars['a'] == 0 even
-        #       after reassign
-        self.assertEqual(vm.stack, [3, 2])
-        self.assertEqual(c.env.vars["a"], 0)
-        self.assertEqual(c.env.vars["b"], 1)
+        compiler = Compiler(source)
+        micheline = compiler.compile_expression()
+        vm = VM()
+        vm.execute(micheline)
+        self.assertEqual([item.value for item in vm.stack.items], [2, 3])
+        self.assertEqual(compiler.env.vars["a"], 0)
+        self.assertEqual(compiler.env.vars["b"], 1)
 
 
 class TestCompilerDefun(unittest.TestCase):
@@ -1625,27 +1642,27 @@ bar = foo(baz)
 fff = foo(bar)
 foo(foo(bar))
 """
-        vm = OldVM(isDebug=False)
-        c = Compiler(source, isDebug=False)
-        instructions = c._compile(c.ast)
-        vm._run_instructions(instructions)
-        self.assertEqual(vm.stack[-1], 16)
-        self.assertEqual(instructions[3].args[0], t.Int())
-        self.assertEqual(instructions[3].args[1], t.Int())
+        micheline = Compiler(source).compile_expression()
+        vm = VM()
+        vm.execute(micheline)
+        self.assertEqual(vm.stack.peek().value, 16)
+        fun = vm.stack.items[3]
+        self.assertEqual([arg.prim for arg in fun.args], ['int', 'int'])
         self.assertEqual(len(vm.stack), 5)
 
     def todo_test_multiple_args_func(self):
-        vm = OldVM(isDebug=False)
         source = """
 def add(a, b):
     return a + b
 foo(1, 2)
 """
-        c = Compiler(source, isDebug=False)
-        instructions = c._compile(c.ast)
-        vm._run_instructions(instructions)
-        self.assertEqual(vm.stack[-1], 16)
-        self.assertEqual(len(vm.stack), 5)
+        pass
+        #vm = OldVM(isDebug=False)
+        #c = Compiler(source, isDebug=False)
+        #instructions = c._compile(c.ast)
+        #vm._run_instructions(instructions)
+        #self.assertEqual(vm.stack[-1], 16)
+        #self.assertEqual(len(vm.stack), 5)
 
 
 class TestCompilerIntegration(unittest.TestCase):
@@ -1668,28 +1685,25 @@ regular_string = "{regular_string}"
         self.assertEqual(instructions, expected_instructions)
 
     def test_store_vars_and_add(self):
-        vm = OldVM(isDebug=False)
         source = """
 a = 1
 b = 2
 c = a + b + b
 a + b + c
         """
-        micheline = Compiler(source).to_micheline()
+        micheline = Compiler(source).compile_expression()
         vm = VM()
         vm.execute(micheline)
-        self.assertEqual(vm.stack.items, [core.IntType(i) for i in [8, 5, 2, 1]])
+        self.assertEqual(vm.stack.items, [IntType(i) for i in [8, 5, 2, 1]])
 
     def test_push_string(self):
-        vm = OldVM(isDebug=False)
         source = "'foobar'"
-        c = Compiler(source, isDebug=False)
-        instructions = c._compile(c.ast)
-        vm._run_instructions(instructions)
-        self.assertEqual(vm.stack, ["foobar"])
+        micheline = Compiler(source).compile_expression()
+        vm = VM()
+        vm.execute(micheline)
+        self.assertEqual(vm.stack.items, [StringType("foobar")])
 
     def test_compare(self):
-        vm = OldVM(isDebug=False)
         source = "1 < 2"
         c = Compiler(source, isDebug=False)
         instructions = c._compile(c.ast)
@@ -1699,25 +1713,26 @@ a + b + c
             Instr("COMPARE", [], {}),
             Instr("LT", [], {}),
         ]
-        vm._run_instructions(instructions)
-        self.assertEqual(vm.stack, [True])
         self.assertEqual(instructions, expected_instructions)
 
+        micheline = Compiler(source).compile_expression()
+        vm = VM()
+        vm.execute(micheline)
+        self.assertEqual(vm.stack.items, [BoolType(True)])
+
     def test_if(self):
-        vm = OldVM(isDebug=False)
         source = """
 if 1 < 2:
     "foo"
 else:
     "bar"
         """
-        c = Compiler(source, isDebug=False)
-        instructions = c._compile(c.ast)
-        vm._run_instructions(instructions)
-        self.assertEqual(vm.stack, ["foo"])
+        micheline = Compiler(source).compile_expression()
+        vm = VM()
+        vm.execute(micheline)
+        self.assertEqual(vm.stack.items, [StringType("foo")])
 
     def test_if_reassign(self):
-        vm = OldVM(isDebug=False)
         source = """
 foo = "foo"
 if 1 < 2:
@@ -1725,14 +1740,14 @@ if 1 < 2:
 else:
     foo = "baz"
         """
-        c = Compiler(source, isDebug=False)
-        instructions = c._compile(c.ast)
-        vm._run_instructions(instructions)
-        self.assertEqual(vm.stack, ["bar"])
-        self.assertEqual(c.env.vars["foo"], 0)
+        compiler = Compiler(source)
+        micheline = compiler.compile_expression()
+        vm = VM()
+        vm.execute(micheline)
+        self.assertEqual(vm.stack.items, [StringType("bar")])
+        self.assertEqual(compiler.env.vars["foo"], 0)
 
     def test_if_failwith(self):
-        vm = OldVM(isDebug=False)
         source = """
 foo = "foo"
 if 1 < 2:
@@ -1740,29 +1755,32 @@ if 1 < 2:
 else:
     foo = "baz"
         """
-        c = Compiler(source, isDebug=False)
-        instructions = c._compile(c.ast)
+        compiler = Compiler(source)
+        micheline = compiler.compile_expression()
+        vm = VM()
         try:
-            vm._run_instructions(instructions)
+            vm.execute(micheline)
             assert 0
-        except VMFailwithException:
-            assert 1
+        except MichelsonRuntimeError as e:
+            self.assertEqual(e.format_stdout(), "FAILWITH: 'my error'")
 
     def test_raise(self):
-        vm = OldVM(isDebug=False)
         source = "raise 'foobar'"
-        c = Compiler(source, isDebug=False)
-        instructions = c._compile(c.ast)
+        compiler = Compiler(source, isDebug=False)
+        instructions = compiler._compile(compiler.ast)
         expected_instructions = [
             Instr("PUSH", [t.String(), 'foobar'], {}),
             Instr("FAILWITH", [], {})
         ]
         self.assertEqual(instructions, expected_instructions)
+
+        micheline = compiler.compile_expression()
+        vm = VM()
         try:
-            vm._run_instructions(instructions)
+            vm.execute(micheline)
             assert 0
-        except VMFailwithException:
-            assert 1
+        except MichelsonRuntimeError as e:
+            self.assertEqual(e.format_stdout(), "FAILWITH: 'foobar'")
 
     def test_reassign_in_condition(self):
         def get_source(a):
@@ -1773,19 +1791,15 @@ if a > 0:
 else:
     a = 12
             """
-        source = get_source(10)
-        vm = OldVM(isDebug=False)
-        c = Compiler(source, isDebug=False)
-        instructions = c._compile(c.ast)
-        vm._run_instructions(instructions)
-        self.assertEqual(vm.stack, [11])
+        micheline = Compiler(get_source(10)).compile_expression()
+        vm = VM()
+        vm.execute(micheline)
+        self.assertEqual(vm.stack.items, [IntType(11)])
 
-        source = get_source(0)
-        vm = OldVM(isDebug=False)
-        c = Compiler(source, isDebug=False)
-        instructions = c._compile(c.ast)
-        vm._run_instructions(instructions)
-        self.assertEqual(vm.stack, [12])
+        micheline = Compiler(get_source(0)).compile_expression()
+        vm = VM()
+        vm.execute(micheline)
+        self.assertEqual(vm.stack.items, [IntType(12)])
 
     def test_record_as_function_argument(self):
         source = """
@@ -1800,14 +1814,14 @@ def add(storage: Storage) -> int:
 
 add(Storage(1, 2, 3))
         """
-        micheline = Compiler(source).to_micheline()
+        micheline = Compiler(source).compile_expression()
         vm = VM()
         vm.execute(micheline)
-        self.assertEqual(vm.stack.peek(), core.IntType(6))
+        self.assertEqual(vm.stack.peek(), IntType(6))
 
     def test_sender(self):
         source = "self.sender"
-        micheline = Compiler(source).to_micheline()
+        micheline = Compiler(source).compile_expression()
         vm = VM()
         vm.execute(micheline)
         self.assertEqual(vm.stack.peek(), AddressType(vm.context.sender))
@@ -1817,7 +1831,6 @@ for TestSuite in [
     TestDict,
     TestContract,
     TestRecord,
-    TestCompilerUnit,
     TestCompilerList,
     TestCompilerAssign,
     TestCompilerDefun,
