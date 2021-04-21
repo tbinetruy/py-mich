@@ -887,7 +887,7 @@ class Compiler:
 
 
 class VM:
-    def __init__(self, sender="tz3M4KAnKF2dCSjqfa1LdweNxBGQRqzvPL88"):
+    def __init__(self, sender ="tz3M4KAnKF2dCSjqfa1LdweNxBGQRqzvPL88"):
         self.reset_stack()
         self.context = ExecutionContext()
         self.set_sender(sender)
@@ -1843,21 +1843,16 @@ if __name__ == "__main__":
     unittest.main()
 
 
-from pytezos.michelson.types.core import *
-from pytezos.michelson.instructions.stack import *
-from pytezos.michelson.micheline import MichelineLiteral
+"""
 
 push = PushInstruction.create_type(args=[IntType, MichelineLiteral.create(1)], annots=["%foo"])
 push.as_micheline_expr()
 # {'prim': 'PUSH', 'annots': ['%foo'], 'args': [{'prim': 'int'}, {'int': '1'}]}
 
-from pytezos.michelson.instructions.struct import *
 
 EmptyMapInstruction.create_type(args=[IntType, IntType]).as_micheline_expr()
 # {'prim': 'EMPTY_MAP', 'args': [{'prim': 'int'}, {'prim': 'int'}]}
 
-from pytezos.michelson.instructions.arithmetic import *
-from pytezos.michelson.instructions.control import *
 
 LambdaInstruction.create_type(args=[IntType, IntType, MichelineSequence.create_type([DupInstruction(), AddInstruction()])]).as_micheline_expr()
 # {'prim': 'LAMBDA',
