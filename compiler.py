@@ -27,6 +27,7 @@ from pytezos import ContractInterface
 
 import instr_types as t
 from compiler_backend import CompilerBackend
+from macro_expander import macro_expander
 from helpers import Tree, ast_to_tree
 from vm_types import (Array, Contract, Entrypoint, FunctionPrototype, Instr,
                       Pair, Some)
@@ -1151,6 +1152,35 @@ my_storage # get storage
         )
 
 class TestContract(unittest.TestCase):
+    def test_multi_arg_entrypoint(self):
+        source = f"""
+def require(condition: bool, message: str) -> int:
+    if not condition:
+        raise message
+
+    return 0
+
+class Contract:
+    def deploy():
+        return 0
+
+    def add_positives(x: int, y: int) -> int:
+        _ = require(x > 0, "x is not a positive integer")
+        return x + y
+
+    def sub(x: int) -> int:
+        return x
+        """
+        compiler = Compiler(source)
+        compiler.ast = macro_expander(compiler.ast)
+        micheline = compiler.compile_contract()
+        vm = VM()
+        vm.load_contract(micheline)
+        init_storage = vm.contract.storage.dummy()
+        expected_storage = 5
+        actual_storage = vm.contract.add_positives({"x": 2, "y": 3}).interpret(storage=init_storage).storage
+        self.assertEqual(actual_storage, expected_storage)
+
     def test_dataclass_entrypoint_param_1(self):
         source = f"""
 @dataclass
