@@ -385,6 +385,12 @@ class Compiler:
                 constant_type = t.Address()
             else:
                 constant_type = t.String()
+        elif type(constant.value) == int:
+            constant_type = t.Int()
+        elif type(constant.value) == bool:
+            constant_type = t.Bool()
+        else:
+            raise NotImplementedError
 
         return [
             Instr("PUSH", [constant_type, constant.value], {}),
@@ -800,6 +806,9 @@ class Compiler:
         ]
         return dictionary + key + get_instructions
 
+    def compile_unary_op(self, node: ast.UnaryOp, e: Env) -> List[Instr]:
+        return self._compile(node.operand, e) + [Instr("NOT", [], {})]
+
     def compile(self):
         return self._compile(self.ast)
 
@@ -865,6 +874,8 @@ class Compiler:
             instructions += self.compile_dict(node_ast, current_type.key_type, current_type.value_type, e)
         elif type(node_ast) == ast.Subscript:
             instructions += self.compile_subscript(node_ast, e)
+        elif type(node_ast) == ast.UnaryOp:
+            instructions += self.compile_unary_op(node_ast, e)
         else:
             breakpoint()
             raise NotImplementedError
@@ -1304,10 +1315,10 @@ class RequireArg:
     message: str
 
 def require(param: RequireArg) -> int:
-    if param.condition:
-        return 0
-    else:
+    if not param.condition:
         raise param.message
+
+    return 0
 
 def double(x: int) -> int:
     return x + x
@@ -1320,7 +1331,7 @@ class Contract:
         return Storage("{admin}", 0)
 
     def add(param: int) -> Storage:
-        # TODO _ = require(RequireArg(self.sender == self.storage.admin, "Only owner can call open"))
+        _ = require(RequireArg(self.sender == self.storage.admin, "Only owner can call open"))
 
         self.storage.counter = self.storage.counter + param
         return self.storage
@@ -1333,7 +1344,7 @@ class Contract:
         return self.storage
 
     def quintuple(param: int) -> Storage:
-        # TODO _ = require(RequireArg(self.sender == self.storage.admin, "Only owner can call open"))
+        _ = require(RequireArg(self.sender == self.storage.admin, "Only owner can call open"))
 
         self.storage.counter = double(self.storage.counter) + triple(self.storage.counter)
         return self.storage
@@ -1854,7 +1865,23 @@ add(Storage(1, 2, 3))
         micheline = Compiler(source).compile_expression()
         vm = VM()
         vm.execute(micheline)
-        self.assertEqual(vm.stack.peek(), AddressType(vm.context.sender))
+        self.assertEqual(vm.stack.peek(), AddressType.from_value(vm.context.sender))
+
+    def test_booleans(self):
+        vm = VM()
+
+        for boolean in (True, False):
+            source = str(boolean)
+            micheline = Compiler(source).compile_expression()
+            vm.execute(micheline)
+            self.assertEqual(vm.stack.peek(), BoolType(boolean))
+
+    def test_not(self):
+        source = "not True"
+        micheline = Compiler(source).compile_expression()
+        vm = VM()
+        vm.execute(micheline)
+        self.assertEqual(vm.stack.peek(), BoolType(False))
 
 
 for TestSuite in [
