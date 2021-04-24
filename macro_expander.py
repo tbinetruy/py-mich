@@ -237,6 +237,7 @@ class FactorOutStorage(ast.NodeTransformer):
         for body_node in node.body:
             new_body_node = ExpandStorageInEntrypoints().visit(body_node)
             if type(body_node) == ast.FunctionDef:
+                body_node.returns = ast.Name(id='Storage', ctx=ast.Load())
                 return_storage_node = ast.Return(
                     value=ast.Attribute(
                         value=ast.Name(id='self', ctx=ast.Load()),

@@ -1170,10 +1170,10 @@ class Contract:
     counter: int
     admin: address
 
-    def update_counter(self, new_counter: int) -> int:
+    def update_counter(self, new_counter: int) :
         self.counter = new_counter
 
-    def update_admin(self, new_admin: address) -> int:
+    def update_admin(self, new_admin: address):
         self.admin = new_admin
         """
         compiler = Compiler(source)
