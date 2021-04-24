@@ -1164,6 +1164,25 @@ my_storage # get storage
         )
 
 class TestContract(unittest.TestCase):
+    def test_storage_inside_contract(self):
+        source = f"""
+class Contract:
+    counter: int
+    admin: address
+
+    def update_counter(self, new_counter: int) -> int:
+        self.counter = new_counter
+
+    def update_admin(self, new_admin: address) -> int:
+        self.admin = new_admin
+        """
+        compiler = Compiler(source)
+        micheline = compiler.compile_contract()
+        vm = VM()
+        vm.load_contract(micheline)
+        self.assertEqual(vm.contract.update_counter(10).interpret().storage['counter'], 10)
+        self.assertEqual(vm.contract.update_admin(vm.context.sender).interpret().storage['admin'], vm.context.sender)
+
     def test_multi_arg_entrypoint_or_function(self):
         source = f"""
 def require(condition: bool, message: str) -> int:
@@ -1622,6 +1641,9 @@ class Contract:
     def test_multi_entrypoint_contract(self):
         source = """
 class Contract:
+    def deploy():
+        return 0
+
     def incrementByTwo(a: int) -> int:
         b = 1
         return a + b + 1
