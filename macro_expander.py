@@ -166,9 +166,13 @@ class RemoveSelfArgFromMethods(ast.NodeTransformer):
 
 
 def macro_expander(source_ast):
-    pass1 = TuplifyFunctionArguments()
+    pass1 = RemoveSelfArgFromMethods()
+    pass2 = TuplifyFunctionArguments()
+    pass3 = AssignAllFunctionCalls()
     new_ast = pass1.visit(source_ast)
-    new_ast.body = pass1.dataclasses + new_ast.body
+    new_ast = pass2.visit(new_ast)
+    new_ast = pass3.visit(new_ast)
+    new_ast.body = pass2.dataclasses + new_ast.body
     return ast.fix_missing_locations(new_ast)
 
 
