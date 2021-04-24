@@ -788,7 +788,12 @@ class Compiler:
         return test_instructions + if_instructions
 
     def compile_raise(self, raise_ast: ast.Raise, e: Env) -> List[Instr]:
-        return self._compile(raise_ast.exc, e) + [Instr("FAILWITH", [], {})]
+        try:
+            raise_ast.exc.args[0]
+        except:
+            breakpoint()
+            pass
+        return self._compile(raise_ast.exc.args[0], e) + [Instr("FAILWITH", [], {})]
 
     def compile_subscript(self, subscript: ast.Subscript, e: Env) -> List[Instr]:
         dictionary = self._compile(subscript.value, e)
@@ -1187,7 +1192,7 @@ class Contract:
         source = f"""
 def require(condition: bool, message: str) -> int:
     if not condition:
-        raise message
+        raise Exception(message)
 
     return 0
 
@@ -1335,7 +1340,7 @@ class RequireArg:
 
 def require(param: RequireArg) -> int:
     if not param.condition:
-        raise param.message
+        raise Exception(param.message)
 
     return 0
 
@@ -1357,7 +1362,7 @@ class Contract:
 
     def sub(param: int) -> Storage:
         if self.sender != self.storage.admin:
-            raise "Only owner can call open"
+            raise Exception("Only owner can call open")
 
         self.storage.counter = self.storage.counter - param
         return self.storage
@@ -1429,7 +1434,7 @@ class Contract:
 
     def open(params: OpenArg) -> Storage:
         if self.sender != self.storage.admin:
-            raise "Only owner can call open"
+            raise Exception("Only owner can call open")
 
         self.storage.open = params.open
         self.storage.manifest_url = params.manifest_url
@@ -1535,7 +1540,7 @@ class Contract:
 
     def add(a: int) -> int:
         if a < 10:
-            raise 'input smaller than 10'
+            raise Exception('input smaller than 10')
         else:
             a = a + a
             self.storage.counter = self.storage.counter + a
@@ -1815,7 +1820,7 @@ else:
         source = """
 foo = "foo"
 if 1 < 2:
-    raise "my error"
+    raise Exception("my error")
 else:
     foo = "baz"
         """
@@ -1829,7 +1834,7 @@ else:
             self.assertEqual(e.format_stdout(), "FAILWITH: 'my error'")
 
     def test_raise(self):
-        source = "raise 'foobar'"
+        source = "raise Exception('foobar')"
         compiler = Compiler(source, isDebug=False)
         instructions = compiler._compile(compiler.ast)
         expected_instructions = [
