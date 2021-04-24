@@ -32,6 +32,7 @@ class TuplifyFunctionArguments(ast.NodeTransformer):
         super().__init__(*args, **kwargs)
         self.env = {}  # key: fun_nam, val: param_dataclass_name
         self.dataclasses = []
+        self.defined_class_names = []
 
     def make_dataclass(self, name, arguments_spec):
         return ast.ClassDef(
@@ -50,9 +51,16 @@ class TuplifyFunctionArguments(ast.NodeTransformer):
             decorator_list=[ast.Name(id='dataclass', ctx=ast.Load())]
         )
 
+    def visit_ClassDef(self, node: ast.ClassDef) -> Any:
+        self.defined_class_names.append(node.name)
+        node.body = [self.visit(body_element) for body_element in node.body]
+        return node
+
     def visit_FunctionDef(self, node: ast.FunctionDef) -> Any:
         prologue_body_instructions = []
         arguments = node.args.args
+
+        # skip class instantiations and functions of 1 argument
         if len(arguments) > 1:
             ### generate argument dataclass
             arguments_spec = {
@@ -89,8 +97,8 @@ class TuplifyFunctionArguments(ast.NodeTransformer):
         return node
 
     def visit_Call(self, node: ast.Call) -> Any:
-        if len(node.args) > 1:
-            fun_name = node.func.id
+        fun_name = node.func.id
+        if len(node.args) > 1 and fun_name not in self.defined_class_names:
             node.args = [
                 ast.Call(
                     func=ast.Name(id=self.env[fun_name], ctx=ast.Load()),
