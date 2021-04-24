@@ -890,6 +890,7 @@ class Compiler:
         return CompilerBackend().compile_instructions(instructions)
 
     def compile_contract(self):
+        self.ast = macro_expander(self.ast)
         self.compile()
         return CompilerBackend().compile_contract(self.contract)
 
@@ -1163,7 +1164,7 @@ my_storage # get storage
         )
 
 class TestContract(unittest.TestCase):
-    def test_multi_arg_entrypoint(self):
+    def test_multi_arg_entrypoint_or_function(self):
         source = f"""
 def require(condition: bool, message: str) -> int:
     if not condition:
@@ -1175,15 +1176,14 @@ class Contract:
     def deploy():
         return 0
 
-    def add_positives(x: int, y: int) -> int:
-        _ = require(x > 0, "x is not a positive integer")
+    def add_positives(self, x: int, y: int) -> int:
+        require(x > 0, "x is not a positive integer")
         return x + y
 
-    def sub(x: int) -> int:
+    def sub(self, x: int) -> int:
         return x
         """
         compiler = Compiler(source)
-        compiler.ast = macro_expander(compiler.ast)
         micheline = compiler.compile_contract()
         vm = VM()
         vm.load_contract(micheline)
@@ -1429,7 +1429,8 @@ class Contract:
 
         return self.storage
         """
-        micheline = Compiler(source).compile_contract()
+        compiler = Compiler(source)
+        micheline = compiler.compile_contract()
         vm = VM()
         vm.load_contract(micheline)
         init_storage = vm.contract.storage.dummy()
