@@ -107,6 +107,31 @@ class TuplifyFunctionArguments(ast.NodeTransformer):
             ]
         return node
 
+
+class AssignAllFunctionCalls(ast.NodeTransformer):
+    """
+    Input
+    -----
+
+    foo(*args)
+
+    Result
+    ------
+
+    _ = foo(*args)
+    """
+
+    def visit_Expr(self, node: ast.Expr) -> Any:
+        """Funcalls which's return value are not assigned are wrapped in an ast.Expr"""
+        if type(node.value) == ast.Call:
+            call_node = node.value
+            return ast.Assign(
+                targets=[ast.Name(id='__placeholder__', ctx=ast.Store())],
+                value=call_node,
+                type_comment=None)
+
+        return node
+
 def macro_expander(source_ast):
     pass1 = TuplifyFunctionArguments()
     new_ast = pass1.visit(source_ast)
@@ -136,8 +161,26 @@ assert increment(10) == 11
         self.assertEqual(eval(source), 15)
 
 
+class TestAssignAllFunctionCallsTests(unittest.TestCase):
+    def test_function_call_in_block(self):
+        source = """
+f = lambda x: x
+if True:
+    y = f(1)
+    f(2)
+
+assert __placeholder__ == 2
+assert y == 1
+        """
+        source_ast = ast.parse(source)
+        new_ast = AssignAllFunctionCalls().visit(source_ast)
+        new_ast = ast.fix_missing_locations(new_ast)
+        eval(compile(new_ast, '', mode='exec'))
+
+
 for TestSuite in [
         #TestTuplifyFunctionArguments,
+        TestAssignAllFunctionCallsTests,
 ]:
     suite = unittest.defaultTestLoader.loadTestsFromTestCase(TestSuite)
     unittest.TextTestRunner().run(suite)
