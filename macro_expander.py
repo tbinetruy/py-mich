@@ -5,6 +5,24 @@ from dataclasses import dataclass
 import unittest
 
 
+def make_dataclass(name, arguments_spec):
+    return ast.ClassDef(
+        name=name,
+        bases=[],
+        keywords=[],
+        body=[
+            ast.AnnAssign(
+                target=ast.Name(id=argument_name, ctx=ast.Store()),
+                annotation=argument_type,
+                value=None,
+                simple=1,
+            )
+            for argument_name, argument_type in arguments_spec.items()
+        ],
+        decorator_list=[ast.Name(id='dataclass', ctx=ast.Load())]
+    )
+
+
 class TuplifyFunctionArguments(ast.NodeTransformer):
     """
     Input
@@ -34,23 +52,6 @@ class TuplifyFunctionArguments(ast.NodeTransformer):
         self.dataclasses = []
         self.defined_class_names = []
 
-    def make_dataclass(self, name, arguments_spec):
-        return ast.ClassDef(
-            name=name,
-            bases=[],
-            keywords=[],
-            body=[
-                ast.AnnAssign(
-                    target=ast.Name(id=argument_name, ctx=ast.Store()),
-                    annotation=argument_type,
-                    value=None,
-                    simple=1,
-                )
-                for argument_name, argument_type in arguments_spec.items()
-            ],
-            decorator_list=[ast.Name(id='dataclass', ctx=ast.Load())]
-        )
-
     def visit_ClassDef(self, node: ast.ClassDef) -> Any:
         self.defined_class_names.append(node.name)
         node.body = [self.visit(body_element) for body_element in node.body]
@@ -68,7 +69,7 @@ class TuplifyFunctionArguments(ast.NodeTransformer):
                 for argument_node in arguments
             }
             param_dataclass_name = node.name + "Param"
-            self.dataclasses.append(self.make_dataclass(param_dataclass_name, arguments_spec))
+            self.dataclasses.append(make_dataclass(param_dataclass_name, arguments_spec))
 
             # tuplify arguments
             param_name = node.name + "__param"
@@ -165,15 +166,135 @@ class RemoveSelfArgFromMethods(ast.NodeTransformer):
         return node
 
 
+class ExpandStorageInEntrypoints(ast.NodeTransformer):
+    def visit_Attribute(self, node: ast.Attribute) -> Any:
+        if node.value.id != 'self':
+            return node
+
+        node.value = ast.Attribute(
+            value=ast.Name(id=node.value.id, ctx=ast.Load()),
+            attr='storage',
+            ctx=ast.Load()
+        )
+
+        return node
+
+class FactorOutStorage(ast.NodeTransformer):
+    """
+    Input
+    -----
+
+    @dataclass
+    class Contract:
+        counter: int
+        admin: address
+
+        def update_counter(self, new_counter: int) -> int:
+            self.counter = 1
+
+    Output
+    ------
+
+    @dataclass
+    class Storage
+        counter: int
+        admin: address
+
+    class Contract:
+        def deploy():
+            return Storage()
+
+        def update_counter(self, new_counter: int) -> int:
+            self.storage.counter = 1
+
+            return self.storage
+    """
+    def visit_ClassDef(self, node: ast.ClassDef) -> Any:
+        if node.name != "Contract":
+            return node
+
+        # if there is a `deploy` method, do nothing
+        for body_node in node.body:
+            if type(body_node) == ast.FunctionDef:
+                if body_node.name == "deploy":
+                    return node
+
+        # Factor body ast.AnnAssign into dataclass
+        storage_keys_spec = {}
+        new_node_body = []
+        for i, body_node in enumerate(node.body):
+            if type(body_node) == ast.AnnAssign:
+                storage_keys_spec[body_node.target.id] = body_node.annotation
+            else:
+                new_node_body.append(body_node)
+        node.body = new_node_body
+
+        self.storage_dataclass = make_dataclass('Storage', storage_keys_spec)
+
+        # For all methods, update `self.<storage_key>` into `self.storage.<key>`
+        # and add return `self.storage`
+        new_body = []
+        for body_node in node.body:
+            new_body_node = ExpandStorageInEntrypoints().visit(body_node)
+            if type(body_node) == ast.FunctionDef:
+                return_storage_node = ast.Return(
+                    value=ast.Attribute(
+                        value=ast.Name(id='self', ctx=ast.Load()),
+                        attr='storage',
+                        ctx=ast.Load()
+                    )
+                )
+                new_body_node.body.append(return_storage_node)
+            new_body.append(new_body_node)
+        node.body = new_body
+
+        # Create deploy function
+        deploy_function_node = ast.FunctionDef(
+            name='deploy',
+            args=ast.arguments(posonlyargs=[], args=[], vararg=None, kwonlyargs=[], kw_defaults=[], kwarg=None, defaults=[]),
+            body=[ast.Return(value=ast.Call(func=ast.Name(id='Storage', ctx=ast.Load()), args=[], keywords=[]))],
+            decorator_list=[],
+            returns=None,
+            type_comment=None,
+        )
+        node.body = [deploy_function_node] + node.body
+
+        return node
+
+
 def macro_expander(source_ast):
-    pass1 = RemoveSelfArgFromMethods()
-    pass2 = TuplifyFunctionArguments()
-    pass3 = AssignAllFunctionCalls()
+    pass1 = FactorOutStorage()
+    pass2 = RemoveSelfArgFromMethods()
+    pass3 = TuplifyFunctionArguments()
+    pass4 = AssignAllFunctionCalls()
     new_ast = pass1.visit(source_ast)
     new_ast = pass2.visit(new_ast)
     new_ast = pass3.visit(new_ast)
-    new_ast.body = pass2.dataclasses + new_ast.body
+    new_ast = pass4.visit(new_ast)
+    new_ast.body = pass3.dataclasses + new_ast.body
+    if hasattr(pass1, 'storage_dataclass'):
+        new_ast.body = [pass1.storage_dataclass] + new_ast.body
     return ast.fix_missing_locations(new_ast)
+
+
+class TestFactorOutStorage(unittest.TestCase):
+    def test_new_function_evaluates(self):
+        source = """
+class Contract:
+    counter: int
+    admin: str
+
+    def update_counter(self, new_counter: int) -> int:
+        self.counter = 1
+
+    def update_admin(self, new_admin: str) -> int:
+        self.admin = new_admin
+        """
+        source_ast = ast.parse(source)
+        expander = FactorOutStorage()
+        new_ast = expander.visit(source_ast)
+        new_ast.body = [expander.storage_dataclass] + new_ast.body
+        new_ast = ast.fix_missing_locations(new_ast)
 
 
 class TestRemoveSelfArgFromMethods(unittest.TestCase):
@@ -232,9 +353,10 @@ assert y == 1
 
 
 for TestSuite in [
-        #TestTuplifyFunctionArguments,
+        TestTuplifyFunctionArguments,
         TestAssignAllFunctionCallsTests,
         TestRemoveSelfArgFromMethods,
+        TestFactorOutStorage,
 ]:
     suite = unittest.defaultTestLoader.loadTestsFromTestCase(TestSuite)
     unittest.TextTestRunner().run(suite)
