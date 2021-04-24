@@ -132,11 +132,60 @@ class AssignAllFunctionCalls(ast.NodeTransformer):
 
         return node
 
+
+class RemoveSelfArgFromMethods(ast.NodeTransformer):
+    """
+    Input
+    -----
+
+    class C:
+        def f(self, x: t1, y: t2) -> t3:
+
+    Result
+    ------
+
+    class C:
+        def f(x: t1, y: t2) -> t3:
+    """
+
+    def remove_first_untyped_arg(self, node: ast.FunctionDef) -> Any:
+        if len(node.args.args) and node.args.args[0].annotation == None:
+            del node.args.args[0]
+
+        return node
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> Any:
+        new_body = []
+        for body_node in node.body:
+            if type(body_node) == ast.FunctionDef:
+                new_body.append(self.remove_first_untyped_arg(body_node))
+            else:
+                new_body.append(body_node)
+
+        return node
+
+
 def macro_expander(source_ast):
     pass1 = TuplifyFunctionArguments()
     new_ast = pass1.visit(source_ast)
     new_ast.body = pass1.dataclasses + new_ast.body
     return ast.fix_missing_locations(new_ast)
+
+
+class TestRemoveSelfArgFromMethods(unittest.TestCase):
+    def test_new_function_evaluates(self):
+        source = """
+class C:
+    def f(self, x: int, y: str, z: int): return 1
+        """
+        source_ast = ast.parse(source)
+        new_ast = RemoveSelfArgFromMethods().visit(source_ast)
+        new_method_ast = source_ast.body[0].body[0]
+        self.assertEqual(len(new_method_ast.args.args), 3)
+
+        for arg_node, arg_name, arg_type in zip(new_method_ast.args.args, ['x', 'y', 'z'], ['int', 'str', 'int']):
+            self.assertEqual(arg_node.arg, arg_name)
+            self.assertEqual(arg_node.annotation.id, arg_type)
 
 
 class TestTuplifyFunctionArguments(unittest.TestCase):
@@ -181,6 +230,7 @@ assert y == 1
 for TestSuite in [
         #TestTuplifyFunctionArguments,
         TestAssignAllFunctionCallsTests,
+        TestRemoveSelfArgFromMethods,
 ]:
     suite = unittest.defaultTestLoader.loadTestsFromTestCase(TestSuite)
     unittest.TextTestRunner().run(suite)
