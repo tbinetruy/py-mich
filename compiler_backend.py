@@ -99,7 +99,10 @@ class CompilerBackend:
             constant_type = instruction.args[0]
             constant = instruction.args[1]
             type_name = self.compile_type(constant_type)
-            pushed_constant = {str(constant_type): str(constant)}
+            if type(constant_type) == t.Bool:
+                pushed_constant = {"prim": "True" if constant else "False"}
+            else:
+                pushed_constant = {str(constant_type): str(constant)}
             return {"prim": "PUSH", "args": [type_name, pushed_constant]}
         elif instruction.name == "SWAP":
             return {"prim": "SWAP"}
@@ -142,6 +145,8 @@ class CompilerBackend:
             return {"prim": "NONE"}
         elif instruction.name == "UPDATE":
             return {"prim": "UPDATE"}
+        elif instruction.name == "NOT":
+            return {"prim": "NOT"}
         elif instruction.name == "IF":
             return {
                 "prim": "IF",
