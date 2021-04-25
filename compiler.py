@@ -882,6 +882,8 @@ class Compiler:
             instructions += self.compile_subscript(node_ast, e)
         elif type(node_ast) == ast.UnaryOp:
             instructions += self.compile_unary_op(node_ast, e)
+        elif type(node_ast) == ast.ImportFrom:
+            pass
         else:
             breakpoint()
             raise NotImplementedError
@@ -1911,6 +1913,17 @@ add(Storage(1, 2, 3))
         vm = VM()
         vm.execute(micheline)
         self.assertEqual(vm.stack.peek(), BoolType(False))
+
+    def test_import(self):
+        source = """
+from pymich import *
+False
+        """
+        micheline = Compiler(source).compile_expression()
+        vm = VM()
+        vm.execute(micheline)
+        self.assertEqual(vm.stack.peek(), BoolType(False))
+
 
 
 for TestSuite in [
