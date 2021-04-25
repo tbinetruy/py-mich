@@ -5,33 +5,59 @@ current_dir = path.dirname(path.abspath(__file__))
 pymich_dir = path.dirname(path.dirname(path.dirname(current_dir)))
 sys.path.append(pymich_dir)
 
+#####
+
+import unittest
 from compiler import Compiler
-from compiler_backend import CompilerBackend
+from compiler import VM
+from pytezos.michelson.micheline import MichelsonRuntimeError
 
 with open("contract.py") as f:
     source = f.read()
 
-compiler = Compiler(source)
-compiler.compile()
-micheline = CompilerBackend().compile_contract(compiler.contract)
 
-## run in pytezos vm
-from pytezos import ContractInterface
-ci = ContractInterface.from_micheline(micheline)
+class TestContract(unittest.TestCase):
+    def test_mint(self):
+        micheline = Compiler(source).compile_contract()
+        vm = VM()
+        vm.load_contract(micheline)
 
-admin = "tz1VSUr8wwNhLAzempoch5d6hLRiTh8Cjcjb"
-init_storage = {
-    "admin": admin,
-    "total_supply": 0,
-    "balances": {},
-}
-amount_1 = 10
-res = ci.mint({"to": admin, "amount": amount_1}).interpret(storage=init_storage, sender=admin)
-assert res.storage['balances'][admin] == amount_1
-assert res.storage['total_supply'] == amount_1
+        init_storage = vm.contract.storage.dummy()
+        init_storage['admin'] = vm.context.sender
 
-investor = "KT1TQLYApWLn8M6XNDAJ5YyoSsFoQauxygCa"
-amount_2 = 4
-res = ci.transfer({"to": investor, "amount": amount_2}).interpret(storage=res.storage, sender=admin)
-assert res.storage['balances'][admin] == amount_1 - amount_2
-assert res.storage['balances'][investor] == amount_2
+        new_storage = vm.contract.mint({"to": vm.context.sender, "amount": 10}).interpret(storage=init_storage, sender=vm.context.sender).storage
+        self.assertEqual(new_storage['balances'], {vm.context.sender: 10})
+
+        try:
+            vm.contract.mint({"to": vm.context.sender, "amount": 10}).interpret(storage=init_storage).storage
+            assert 0
+        except MichelsonRuntimeError as e:
+            self.assertEqual(e.format_stdout(), "FAILWITH: 'Only admin can mint'")
+
+    def test_transfer(self):
+        micheline = Compiler(source).compile_contract()
+        vm = VM()
+        vm.load_contract(micheline)
+
+        init_storage = vm.contract.storage.dummy()
+        init_storage['admin'] = vm.context.sender
+        init_storage['balances'] = {vm.context.sender: 10}
+
+        investor = "KT1EwUrkbmGxjiRvmEAa8HLGhjJeRocqVTFi"
+        new_storage = vm.contract.transfer({"to": investor, "amount": 4}).interpret(storage=init_storage, sender=vm.context.sender).storage
+        self.assertEqual(new_storage['balances'], {vm.context.sender: 6, investor: 4})
+
+        try:
+            vm.contract.transfer({"to": investor, "amount": -10}).interpret(storage=new_storage).storage
+            assert 0
+        except MichelsonRuntimeError as e:
+            self.assertEqual(e.format_stdout(), "FAILWITH: 'You need to transfer a positive amount of tokens'")
+
+        try:
+            vm.contract.transfer({"to": investor, "amount": 10}).interpret(storage=new_storage, sender=vm.context.sender).storage
+            assert 0
+        except MichelsonRuntimeError as e:
+            self.assertEqual(e.format_stdout(), "FAILWITH: 'Insufficient sender balance'")
+
+if __name__ == "__main__":
+    unittest.main()

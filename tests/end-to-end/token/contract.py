@@ -1,48 +1,45 @@
 from dataclasses import dataclass
 from typing import Dict
-
-address = str
-
-
-@dataclass
-class Storage:
-    balances: Dict[address, int]
-    total_supply: int
-    admin: address
+from stubs import *
 
 
-def require(condition: bool) -> int:
+def require(condition: bool, message: str) -> int:
     if not condition:
-        raise Exception("Error")
+        raise Exception(message)
 
     return 0
 
 
+@dataclass
 class Contract:
-    def __init__(self, admin, sender):
-        self.storage = Storage({}, 0, admin)
-        self.sender = sender
+    balances: Dict[address, int]
+    total_supply: int
+    admin: address
 
     def mint(self, to: address, amount: int):
-        _ = require(self.sender == self.storage.admin)
+        require(SENDER == self.admin, "Only admin can mint")
 
-        self.storage.total_supply = self.storage.total_supply + amount
+        self.total_supply = self.total_supply + amount
 
-        if to in self.storage.balances:
-            self.storage.balances[to] = self.storage.balances[to] + amount
+        balances = self.balances
+        if to in balances:
+            balances[to] = balances[to] + amount
         else:
-            self.storage.balances[to] = amount
+            balances[to] = amount
+        self.balances = balances
 
     def transfer(self, to: address, amount: int):
-        _ = require(
-            self.sender == self.storage.admin
-            and amount > 0
-            and self.storage.balances[self.sender] >= amount
-        )
+        balances = self.balances
 
-        self.storage.balances[self.sender] = self.storage.balances[self.sender] - amount
+        require(amount > 0, "You need to transfer a positive amount of tokens")
+        require(balances[SENDER] >= amount, "Insufficient sender balance")
 
-        if to in self.storage.balances:
-            self.storage.balances[to] = self.storage.balances[to] + amount
+        balances[SENDER] = balances[SENDER] - amount
+
+        if to in balances:
+            balances[to] = balances[to] + amount
         else:
-            self.storage.balances[to] = amount
+            balances[to] = amount
+
+        self.balances = balances
+
