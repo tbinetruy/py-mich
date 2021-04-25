@@ -1,0 +1,9 @@
+* Election token
+
+This folder contains an example election contract in Python that, when compiled with PyMich, behaves as expected on a Tezos node.
+
+  - The contract source is found in [[./contract.py]],
+  - The compiled Michelson is found in [[./contract.tz]],
+  - The tests executing the contract in a Python interpreter can be found in [[./test_cpython.py]],
+  - Finally, the tests for the Michelson contract interpreted in the Pytezos VM can be found in [[./test_pytezos_vm.py]].
+    
