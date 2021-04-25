@@ -231,25 +231,3 @@ for TestSuite in [
     suite = unittest.defaultTestLoader.loadTestsFromTestCase(TestSuite)
     unittest.TextTestRunner().run(suite)
 
-
-from compiler import Compiler
-
-source = """
-class Contract:
-    def incrementByTwo(a: int) -> int:
-        b = 1
-        return a + b + 1
-
-    def bar(b: int) -> int:
-        return b
-"""
-c = Compiler(source, isDebug=False)
-c.compile()
-b = CompilerBackend()
-
-micheline = b.compile_contract(c.contract)
-
-import json
-
-with open("my_contract.json", "w+") as f:
-    f.write(json.dumps(micheline))

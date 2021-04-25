@@ -10,7 +10,7 @@ from pytezos.michelson.instructions.arithmetic import *
 from pytezos.michelson.instructions.control import *
 from pytezos.michelson.instructions.stack import *
 from pytezos.michelson.instructions.struct import *
-from pytezos.michelson.micheline import MichelineLiteral, MichelsonRuntimeError
+from pytezos.michelson.micheline import MichelsonRuntimeError
 from pytezos.michelson.program import *
 from pytezos.michelson.repl import InterpreterResult
 from pytezos.michelson.sections import CodeSection
