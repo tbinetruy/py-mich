@@ -1191,6 +1191,85 @@ class Contract:
         self.assertEqual(vm.contract.update_counter(10).interpret().storage['counter'], 10)
         self.assertEqual(vm.contract.update_admin(vm.context.sender).interpret().storage['admin'], vm.context.sender)
 
+    def test_final(self):
+        source = f"""
+from dataclasses import dataclass
+from typing import Dict
+from . stubs import *
+
+
+def require(condition: bool, message: str) -> int:
+    if not condition:
+        raise Exception(message)
+
+    return 0
+
+@dataclass
+class Contract:
+    balances: Dict[address, int]
+    total_supply: int
+    admin: address
+
+    def mint(self, to: address, amount: int):
+        require(SENDER == self.admin, "Only admin can mint")
+
+        self.total_supply = self.total_supply + amount
+
+        balances = self.balances
+        if to in balances:
+            balances[to] = balances[to] + amount
+        else:
+            balances[to] = amount
+        self.balances = balances
+
+    def transfer(self, to: address, amount: int):
+        balances = self.balances
+
+        require(amount > 0, "You need to transfer a positive amount of tokens")
+        require(balances[SENDER] >= amount, "Insufficient sender balance")
+
+        balances[SENDER] = balances[SENDER] - amount
+
+        if to in balances:
+            balances[to] = balances[to] + amount
+        else:
+            balances[to] = amount
+
+        self.balances = balances
+        """
+        compiler = Compiler(source)
+        micheline = compiler.compile_contract()
+        vm = VM()
+        vm.load_contract(micheline)
+        init_storage = vm.contract.storage.dummy()
+        init_storage['admin'] = vm.context.sender
+
+        new_storage = vm.contract.mint({"to": vm.context.sender, "amount": 10}).interpret(storage=init_storage, sender=vm.context.sender).storage
+        self.assertEqual(new_storage['balances'], {vm.context.sender: 10})
+
+        try:
+            vm.contract.mint({"to": vm.context.sender, "amount": 10}).interpret(storage=init_storage).storage
+            assert 0
+        except MichelsonRuntimeError as e:
+            self.assertEqual(e.format_stdout(), "FAILWITH: 'Only admin can mint'")
+
+        investor = "KT1EwUrkbmGxjiRvmEAa8HLGhjJeRocqVTFi"
+        new_storage = vm.contract.transfer({"to": investor, "amount": 4}).interpret(storage=new_storage, sender=vm.context.sender).storage
+        self.assertEqual(new_storage['balances'], {vm.context.sender: 6, investor: 4})
+
+        try:
+            vm.contract.transfer({"to": investor, "amount": -10}).interpret(storage=new_storage).storage
+            assert 0
+        except MichelsonRuntimeError as e:
+            self.assertEqual(e.format_stdout(), "FAILWITH: 'You need to transfer a positive amount of tokens'")
+
+        try:
+            vm.contract.transfer({"to": investor, "amount": 10}).interpret(storage=new_storage, sender=vm.context.sender).storage
+            assert 0
+        except MichelsonRuntimeError as e:
+            self.assertEqual(e.format_stdout(), "FAILWITH: 'Insufficient sender balance'")
+
+
     def test_multi_arg_entrypoint_or_function(self):
         source = f"""
 def require(condition: bool, message: str) -> int:
