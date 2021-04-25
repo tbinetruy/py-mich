@@ -398,7 +398,11 @@ class Compiler:
 
     @debug
     def compile_name(self, name: ast.Name, e: Env) -> List[Instr]:
+        if name.id == "SENDER":
+            return self.get_sender(name, e)
+
         var_name = name
+
         if type(name.ctx) == ast.Load:
             var_addr = e.vars[var_name.id]
             jump_length = e.sp - var_addr
@@ -727,7 +731,7 @@ class Compiler:
             and sender_ast.attr == "sender"
         )
 
-    def get_sender(self, sender_ast: ast.Attribute, e: Env) -> List[Instr]:
+    def get_sender(self, sender_ast: ast.Name, e: Env) -> List[Instr]:
         e.sp += 1  # account for pushing sender
         return [Instr("SENDER", [], {})]
 
@@ -735,9 +739,6 @@ class Compiler:
     def compile_attribute(self, attribute_ast: ast.Attribute, e: Env) -> List[Instr]:
         if self.check_get_storage(attribute_ast):
             return self.handle_get_storage(attribute_ast, e)
-
-        if self.check_get_sender(attribute_ast):
-            return self.get_sender(attribute_ast, e)
 
         load_object_instructions = self.compile_name(attribute_ast.value, e)
         record = e.records[e.types[attribute_ast.value.id]]
@@ -1355,20 +1356,20 @@ class Contract:
         return Storage("{admin}", 0)
 
     def add(param: int) -> Storage:
-        _ = require(RequireArg(self.sender == self.storage.admin, "Only owner can call open"))
+        _ = require(RequireArg(SENDER == self.storage.admin, "Only owner can call open"))
 
         self.storage.counter = self.storage.counter + param
         return self.storage
 
     def sub(param: int) -> Storage:
-        if self.sender != self.storage.admin:
+        if SENDER != self.storage.admin:
             raise Exception("Only owner can call open")
 
         self.storage.counter = self.storage.counter - param
         return self.storage
 
     def quintuple(param: int) -> Storage:
-        _ = require(RequireArg(self.sender == self.storage.admin, "Only owner can call open"))
+        _ = require(RequireArg(SENDER == self.storage.admin, "Only owner can call open"))
 
         self.storage.counter = double(self.storage.counter) + triple(self.storage.counter)
         return self.storage
@@ -1433,7 +1434,7 @@ class Contract:
         return Storage("{admin}", '', '', '', '', '', '')
 
     def open(params: OpenArg) -> Storage:
-        if self.sender != self.storage.admin:
+        if SENDER != self.storage.admin:
             raise Exception("Only owner can call open")
 
         self.storage.open = params.open
@@ -1889,7 +1890,7 @@ add(Storage(1, 2, 3))
         self.assertEqual(vm.stack.peek(), IntType(6))
 
     def test_sender(self):
-        source = "self.sender"
+        source = "SENDER"
         micheline = Compiler(source).compile_expression()
         vm = VM()
         vm.execute(micheline)
