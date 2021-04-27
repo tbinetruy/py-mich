@@ -94,6 +94,8 @@ class CompilerBackend:
         elif instruction.name == "LIST":
             return NotImplementedError
         elif instruction.name == "PAIR":
+            if len(instruction.args):
+                return {"prim": "PAIR", "args": [{"int": str(instruction.args[0])}]}
             return {"prim": "PAIR"}
         elif instruction.name == "PUSH":
             constant_type = instruction.args[0]
@@ -136,7 +138,13 @@ class CompilerBackend:
         elif instruction.name == "GE":
             return {"prim": "GE"}
         elif instruction.name == "GET":
-            return {"prim": "GET"}
+            if not instruction.args:
+                return {"prim": "GET"}
+            else:
+                return {
+                    "prim": "GET",
+                    "args": [{"int": str(instruction.args[1])}]
+                }
         elif instruction.name == "FAILWITH":
             return {"prim": "FAILWITH"}
         elif instruction.name == "SOME":
@@ -144,7 +152,13 @@ class CompilerBackend:
         elif instruction.name == "NONE":
             return {"prim": "NONE"}
         elif instruction.name == "UPDATE":
-            return {"prim": "UPDATE"}
+            if not instruction.args:
+                return {"prim": "UPDATE"}
+            else:
+                return {
+                    "prim": "UPDATE",
+                    "args": [{"int": str(instruction.args[1])}]
+                }
         elif instruction.name == "NOT":
             return {"prim": "NOT"}
         elif instruction.name == "IF":

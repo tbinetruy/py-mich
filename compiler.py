@@ -67,91 +67,49 @@ class Record(Tree):
     def make_node(self, left, right):
         return Pair(car=left, cdr=right)
 
-    def get_left(self, tree_node):
-        return tree_node.car
+    def get_type(self, i=0, acc=None):
+        attribute_type = self.attribute_types[i]
+        if acc == None:
+            acc = self.make_node(None, None)
 
-    def get_right(self, tree_node):
-        return tree_node.cdr
+        if i == 0:
+            return self.make_node(attribute_type, self.get_type(i+1))
 
-    def set_right(self, tree_node, value):
-        tree_node.cdr = value
+        elif i == len(self.attribute_types) - 1:
+            return attribute_type
 
-    def left_side_tree_height(self, tree, height=0):
-        if type(tree) is not Pair:
-            return height
         else:
-            return self.left_side_tree_height(self.get_left(tree), height + 1)
-
-    def get_type(self):
-        return self.list_to_tree(self.attribute_types)
-
-    def _attribute_name_to_leaf_number(self, attribute_name):
-        for i, target_name in enumerate(self.attribute_names):
-            if attribute_name == target_name:
-                return i + 1
+            return self.make_node(attribute_type, self.get_type(i+1))
 
     def navigate_to_tree_leaf(self, attribute_name, acc=None):
-        leaf_number = self._attribute_name_to_leaf_number(attribute_name)
-        tree = self.list_to_tree([i for i, _ in enumerate(self.attribute_names)])
-        return self._navigate_to_tree_leaf(tree, leaf_number)
+        el_number = 1
+        for i, candidate in enumerate(self.attribute_names):
+            if i == len(self.attribute_names) - 1:
+                el_number = 2 * i
+            elif attribute_name == candidate:
+                el_number = 2 * i + 1
+                break
 
-    def _navigate_to_tree_leaf(self, tree, leaf_number, acc=None):
-        if not acc:
-            acc = []
+        return [Instr("GET", [t.Int(), el_number], {})]
 
-        if type(tree) is not Pair:
-            return acc
+    def update_tree_leaf(self, attribute_name, e):
+        el_number = 1
+        for i, candidate in enumerate(self.attribute_names):
+            if i == len(self.attribute_names) - 1:
+                el_number = 2 * i
+            elif attribute_name == candidate:
+                el_number = 2 * i + 1
+                break
 
-        left_max_leaf_number = 2 ** self.left_side_tree_height(self.get_left(tree))
-        if leaf_number <= left_max_leaf_number:
-            return (
-                acc
-                + [Instr("CAR", [], {})]
-                + self._navigate_to_tree_leaf(self.get_left(tree), leaf_number)
-            )
-        else:
-            return (
-                acc
-                + [Instr("CDR", [], {})]
-                + self._navigate_to_tree_leaf(
-                    self.get_right(tree), leaf_number - left_max_leaf_number
-                )
-            )
-
-    def _compile_node(self, node, acc=None):
-        if not acc:
-            acc = []
-        if type(node) == Pair:
-            return (
-                self._compile_node(node.cdr)
-                + self._compile_node(node.car)
-                + [Instr("PAIR", [], {})]
-            )
-        else:
-            return [
-                Instr("PUSH", [t.Int(), node], {}),
-            ]
-
-    def build_record(self, attribute_values):
-        tree = self.list_to_tree(attribute_values)
-        return self._compile_node(tree)
-
-    def _compile_node_new(self, node, compile_function, env, counter=-1):
-        if type(node) == Pair:
-            if type(node.cdr) != Pair:
-                counter = 1
-            el1 = self._compile_node_new(node.cdr, compile_function, env, counter)
-            if type(node.car) != Pair:
-                counter = 0
-            el2 = self._compile_node_new(node.car, compile_function, env, counter)
-            env.sp -= 1  # account for pair
-            return el1 + el2 + [Instr("PAIR", [], {})]
-        else:
-            return compile_function(node, env, current_type=self.attribute_types[counter])
+        e.sp -= 1  # account for update
+        return [Instr("UPDATE", [t.Int(), el_number], {})]
 
     def compile_record(self, attribute_values, compile_function, env):
-        tree = self.list_to_tree(attribute_values)
-        return self._compile_node_new(tree, compile_function, env)
+        instructions = []
+        for attribute_value, attribute_type in zip(reversed(attribute_values), reversed(self.attribute_types)):
+            instructions += compile_function(attribute_value, env, current_type=attribute_type)
+        env.sp -= len(attribute_values) - 1
+        return instructions + [Instr("PAIR", [len(attribute_values)], {})]
 
 
 @dataclass
@@ -228,35 +186,11 @@ class Compiler:
 
     @debug
     def compile_assign_storage_attribute(self, assign_ast: ast.Assign, e: Env) -> List[Instr]:
-        attribute_to_assign = assign_ast.targets[0].attr
-        attribute_names = e.records['Storage'].attribute_names
-
-        args = []
-        for attribute_name in attribute_names:
-            if attribute_name == attribute_to_assign:
-                args.append(assign_ast.value)
-            else:
-                args.append(
-                    ast.Attribute(
-                        value=ast.Attribute(
-                            value=ast.Name(id='self', ctx=ast.Load()),
-                            attr='storage',
-                            ctx=ast.Load(),
-                        ),
-                        attr=attribute_name,
-                        ctx=ast.Load(),
-                    ),
-                )
-
         new_ast = ast.Assign(
             targets=[
-                ast.Name(id='storage', ctx=ast.Load()),
+                ast.Attribute(value=ast.Name(id='__STORAGE__', ctx=ast.Load()), attr=assign_ast.targets[0].attr, ctx=ast.Store())
             ],
-            value=ast.Call(
-                func=ast.Name(id='Storage', ctx=ast.Load()),
-                args=args,
-                keywords=[]
-            ),
+            value=assign_ast.value,
             type_comment=None,
         )
         return self.compile_assign(new_ast, e)
@@ -324,7 +258,27 @@ class Compiler:
         return dictionary + value + [Instr("SOME", [], {})] +  key + [Instr("UPDATE", [], {})] + free_old_dict + replace_old_dict
 
     @debug
+    def compile_assign_record(self, node: ast.Assign, e: Env) -> List[Instr]:
+        fetch_record = self._compile(node.targets[0], e)[:-1]
+        push_value = self._compile(node.value, e)
+        var_name = node.targets[0].value.id
+        record_name = self.env.types[var_name]
+        record_type = self.env.records[record_name]
+        update_record = record_type.update_tree_leaf(node.targets[0].attr, e)
+
+        # override new record with old record
+        old_record_location = e.vars[var_name]
+        free_old_record, _ = self.free_var(var_name, e)
+        move_back_new_record= [
+            Instr("DUG", [e.sp - old_record_location], {}),
+        ]
+        e.vars[var_name] = old_record_location
+
+        return fetch_record + push_value + update_record + free_old_record + move_back_new_record
+
+    @debug
     def compile_assign(self, assign: ast.Assign, e: Env) -> List[Instr]:
+        # Handle storage assignments
         try:
             cond1 = assign.targets[0].value.value.id == "self"
             cond2 = assign.targets[0].value.attr == "storage"
@@ -333,14 +287,20 @@ class Compiler:
         except:
             pass
 
+        # Handle reassignments
         try:
             if assign.targets[0].id in e.vars.keys():
                 return self._compile_reassign(assign, e)
         except:
             pass
 
+        # Handle subscript assignments
         if type(assign.targets[0]) == ast.Subscript:
             return self.compile_assign_subscript(assign, e)
+
+        # Handle record key assignments
+        if type(assign.targets[0]) == ast.Attribute:
+            return self.compile_assign_record(assign, e)
 
         instructions: List[Instr] = []
         var_name = assign.targets[0]
@@ -608,7 +568,7 @@ class Compiler:
         ]
 
         # the storage is at the bottom of the stack
-        e.vars["storage"] = 0
+        e.vars["__STORAGE__"] = 0
 
         # the parameter is a the top of the stack
         # N.B. all variables declared in the prologue instructions) are
@@ -706,12 +666,12 @@ class Compiler:
         if storage_get_ast.attr != "storage":
             # storage is record
             key = storage_get_ast.attr
-            load_storage_instr = self.compile_name(ast.Name(id='storage', ctx=ast.Load()), e)
+            load_storage_instr = self.compile_name(ast.Name(id='__STORAGE__', ctx=ast.Load()), e)
             storage_key_name = storage_get_ast.attr
             get_storage_key_instr = e.records[e.types['__STORAGE__']].navigate_to_tree_leaf(storage_key_name)
             return load_storage_instr + get_storage_key_instr
         else:
-            return self.compile_name(ast.Name(id='storage', ctx=ast.Load()), e)
+            return self.compile_name(ast.Name(id='__STORAGE__', ctx=ast.Load()), e)
 
     def check_get_storage(self, storage_get_ast: ast.Attribute) -> bool:
         try:
@@ -1008,6 +968,78 @@ balances['user']
 
 
 class TestRecord(unittest.TestCase):
+    def test_record_create(self):
+        source = """
+@dataclass
+class Storage:
+    a: int
+    b: int
+    c: int
+
+storage = Storage(1, 2, 3)
+        """
+        compiler = Compiler(source)
+        micheline = compiler.compile_expression()
+        vm = VM()
+        vm.execute(micheline)
+        self.assertEqual(vm.stack.peek().to_python_object(), (1, 2, 3))
+
+    def test_record_get(self):
+        source = """
+@dataclass
+class Storage:
+    a: int
+    b: int
+    c: int
+
+storage = Storage(1, 2, 3)
+storage.a
+storage.b
+storage.c
+        """
+        micheline = Compiler(source).compile_expression()
+        vm = VM()
+        vm.execute(micheline)
+        self.assertEqual([item.value for item in vm.stack.items[:-1]], [3, 2, 1])
+
+    def test_record_set(self):
+        source = """
+@dataclass
+class Storage:
+    a: int
+    b: int
+    c: int
+
+storage = Storage(1, 2, 3)
+storage.a = 10
+storage.b = 20
+storage.c = 30
+        """
+        compiler = Compiler(source)
+        micheline = compiler.compile_expression()
+        vm = VM()
+        vm.execute(micheline)
+        self.assertEqual(vm.stack.peek().to_python_object(), (10, 20, 30))
+
+    def test_record_as_function_argument(self):
+        source = """
+@dataclass
+class Storage:
+    a: int
+    b: int
+    c: int
+
+def add(storage: Storage) -> int:
+    return storage.a + storage.b + storage.c
+
+add(Storage(1, 2, 3))
+        """
+        compiler = Compiler(source)
+        micheline = compiler.compile_expression()
+        vm = VM()
+        vm.execute(micheline)
+        self.assertEqual(vm.stack.peek(), IntType(6))
+
     def test_compile_get_record_attribute(self):
         def test(attribute_name, stack_top_value):
             source = f"""
@@ -1029,7 +1061,7 @@ my_storage.{attribute_name}
             micheline = Compiler(source).compile_expression()
             vm = VM()
             vm.execute(micheline)
-            self.assertEqual(vm.stack.peek(), IntType(stack_top_value))
+            self.assertEqual(vm.stack.peek().value, stack_top_value)
 
         test("a", 1)
         test("b", 2)
@@ -1059,11 +1091,7 @@ my_storage # get storage
         micheline = Compiler(source).compile_expression()
         vm = VM()
         vm.execute(micheline)
-        pair_1 = PairType((IntType(1), IntType(2)))
-        pair_2 = PairType((IntType(3), IntType(4)))
-        pair_3 = PairType((IntType(5), IntType(6)))
-        expected_record = PairType((PairType((pair_1, pair_2)), pair_3))
-        self.assertEqual(vm.stack.peek(), expected_record)
+        self.assertEqual(vm.stack.peek().to_python_object(), (1, 2, 3, 4, 5, 6))
 
     def test_get_record_entry(self):
         attribute_names = ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l"]
@@ -1084,92 +1112,8 @@ my_storage # get storage
             micheline = Compiler(source).compile_expression()
             vm = VM()
             vm.execute(micheline)
-            self.assertEqual(vm.stack.peek(), IntType(attribute_value))
+            self.assertEqual(vm.stack.peek().value, attribute_value)
 
-
-    def test_build_record(self):
-        record = Record(["a", "b"], [t.Int(), t.Int()])
-        instructions = record.build_record([1, 2])
-        expected_instructions = [
-            Instr("PUSH", [t.Int(), 2], {}),
-            Instr("PUSH", [t.Int(), 1], {}),
-            Instr("PAIR", [], {}),
-        ]
-        self.assertEqual(instructions, expected_instructions)
-
-        record = Record(
-            ["a", "b", "c", "d", "e"], [t.Int(), t.Int(), t.Int(), t.Int(), t.Int()]
-        )
-        instructions = record.build_record([1, 2, 3, 4, 5])
-        expected_instructions = [
-            Instr("PUSH", [t.Int(), 5], {}),
-            Instr("PUSH", [t.Int(), 4], {}),
-            Instr("PUSH", [t.Int(), 3], {}),
-            Instr("PAIR", [], {}),
-            Instr("PUSH", [t.Int(), 2], {}),
-            Instr("PUSH", [t.Int(), 1], {}),
-            Instr("PAIR", [], {}),
-            Instr("PAIR", [], {}),
-            Instr("PAIR", [], {}),
-        ]
-        self.assertEqual(instructions, expected_instructions)
-
-    def test_record_tree(self):
-        record = Record(
-            ["a", "b", "c", "d", "e"], [t.Int(), t.Int(), t.Int(), t.Int(), t.Int()]
-        )
-
-        self.assertEqual(
-            Pair(car=Pair(car=Pair(car=1, cdr=2), cdr=Pair(car=3, cdr=4)), cdr=5),
-            record.list_to_tree([1, 2, 3, 4, 5]),
-        )
-        instructions = record.navigate_to_tree_leaf("a")
-        self.assertEqual(
-            [
-                Instr(name="CAR", args=[], kwargs={}),
-                Instr(name="CAR", args=[], kwargs={}),
-                Instr(name="CAR", args=[], kwargs={}),
-            ],
-            instructions,
-        )
-
-        instructions = record.navigate_to_tree_leaf("b")
-        self.assertEqual(
-            [
-                Instr(name="CAR", args=[], kwargs={}),
-                Instr(name="CAR", args=[], kwargs={}),
-                Instr(name="CDR", args=[], kwargs={}),
-            ],
-            instructions,
-        )
-
-        instructions = record.navigate_to_tree_leaf("c")
-        self.assertEqual(
-            [
-                Instr(name="CAR", args=[], kwargs={}),
-                Instr(name="CDR", args=[], kwargs={}),
-                Instr(name="CAR", args=[], kwargs={}),
-            ],
-            instructions,
-        )
-
-        instructions = record.navigate_to_tree_leaf("d")
-        self.assertEqual(
-            [
-                Instr(name="CAR", args=[], kwargs={}),
-                Instr(name="CDR", args=[], kwargs={}),
-                Instr(name="CDR", args=[], kwargs={}),
-            ],
-            instructions,
-        )
-
-        instructions = record.navigate_to_tree_leaf("e")
-        self.assertEqual(
-            [
-                Instr(name="CDR", args=[], kwargs={}),
-            ],
-            instructions,
-        )
 
 class TestContract(unittest.TestCase):
     def test_storage_inside_contract(self):
@@ -1951,24 +1895,6 @@ else:
         vm = VM()
         vm.execute(micheline)
         self.assertEqual(vm.stack.items, [IntType(12)])
-
-    def test_record_as_function_argument(self):
-        source = """
-@dataclass
-class Storage:
-    a: int
-    b: int
-    c: int
-
-def add(storage: Storage) -> int:
-    return storage.a + storage.b + storage.c
-
-add(Storage(1, 2, 3))
-        """
-        micheline = Compiler(source).compile_expression()
-        vm = VM()
-        vm.execute(micheline)
-        self.assertEqual(vm.stack.peek(), IntType(6))
 
     def test_sender(self):
         source = "SENDER"
