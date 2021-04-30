@@ -60,9 +60,10 @@ def Comment(msg: str):
 
 
 class Record(Tree):
-    def __init__(self, attribute_names, attribute_types):
+    def __init__(self, attribute_names, attribute_types, attribute_annotations):
         self.attribute_names = attribute_names
         self.attribute_types = attribute_types
+        self.attribute_annotations = attribute_annotations
 
     def make_node(self, left, right):
         return Pair(car=left, cdr=right)
@@ -656,10 +657,12 @@ class Compiler:
     def compile_record(self, record_ast: ast.ClassDef, e: Env) -> List[Instr]:
         attribute_names = [attr.target.id for attr in record_ast.body]
         attribute_types = []
+        attribute_annotations = []
         for attr_name, attr in zip(attribute_names, record_ast.body):
+            attribute_annotations.append(attr.annotation)
             attribute_types.append(self.type_parser.parse(attr.annotation, e, "%" + attr_name))
 
-        e.records[record_ast.name] = Record(attribute_names, attribute_types)
+        e.records[record_ast.name] = Record(attribute_names, attribute_types, attribute_annotations)
         return []
 
     def handle_get_storage(self, storage_get_ast: ast.Attribute, e: Env) -> List[Instr]:
@@ -700,10 +703,45 @@ class Compiler:
         if self.check_get_storage(attribute_ast):
             return self.handle_get_storage(attribute_ast, e)
 
-        load_object_instructions = self.compile_name(attribute_ast.value, e)
-        record = e.records[e.types[attribute_ast.value.id]]
-        load_attribute_instructions = record.navigate_to_tree_leaf(attribute_ast.attr)
-        return load_object_instructions + load_attribute_instructions
+        acc = []
+        cond = True
+        attribute_names = []
+        current_node = ast.parse("storage.bar.baz.yo").body[0].value
+        current_node = attribute_ast
+        while cond:
+            if type(current_node.value) == ast.Attribute:
+                acc.append(current_node.attr)
+                current_node = current_node.value
+                pass
+            elif type(current_node.value) == ast.Name:
+                acc.append(current_node.attr)
+                acc.append(current_node.value.id)
+                cond = False
+            else:
+                cond = False
+        acc.reverse()
+
+        records = []
+        for i, el in enumerate(acc[:-1]):
+            if i == 0:
+                record_type_name = e.types[el]
+                records.append(e.records[record_type_name])
+            else:
+                index = None
+                current_record = records[-1]
+                for i, attribute_name in enumerate(current_record.attribute_names):
+                    if attribute_name == el:
+                        index = i
+                nested_record_type = current_record.attribute_annotations[index].id
+                records.append(e.records[nested_record_type])
+
+        instructions = self._compile(ast.Name(acc[0], ctx=ast.Load()), e)
+        for i in range(len(records)):
+            record = records[i]
+            attr_name = acc[i + 1]
+            instructions += record.navigate_to_tree_leaf(attr_name)
+
+        return instructions
 
     @debug
     def compile_compare(self, compare_ast: ast.Compare, e: Env) -> List[Instr]:
@@ -968,6 +1006,33 @@ balances['user']
 
 
 class TestRecord(unittest.TestCase):
+    def test_nested_record_create(self):
+        source = """
+@dataclass
+class SubStorage:
+    a: int
+    b: int
+    c: int
+
+@dataclass
+class Storage:
+    info: SubStorage
+    counter: int
+
+storage = Storage(SubStorage(3, 2, 1), 4)
+storage.info
+a = storage.info.a
+b = storage.info.b
+c = storage.info.c
+        """
+        compiler = Compiler(source)
+        micheline = compiler.compile_expression()
+        vm = VM()
+        vm.execute(micheline)
+        for i in range(3):
+            self.assertEqual(vm.stack.items[i].value, i + 1)
+        # self.assertEqual(vm.stack.peek().__repr__(), '((1 * (2 * 3)) * 4)')
+
     def test_record_create(self):
         source = """
 @dataclass
