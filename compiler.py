@@ -245,28 +245,127 @@ class Compiler:
             print_val = "[object]"
         return [Comment(f"{var_name.id} = {print_val}")] + instructions
 
+
+    def _get_assign_subscript_target_addr(self, node) -> str:
+        if type(node) == ast.Name:
+            return node.id
+        if type(node) == ast.Attribute:
+            current_node = node
+            while 1:
+                if type(current_node.value) == ast.Attribute:
+                    current_node = current_node.value
+                elif type(current_node.value) == ast.Name:
+                    return node.value.id
+                else:
+                    raise NotImplementedError
+        raise NotImplementedError
+
+    def _fetch_variable(self, var_name: str, e: Env) -> List[Instr]:
+        jump_length = e.sp - e.vars[var_name]
+        e.sp += 1
+        return [
+            Instr("DIG", [jump_length], {}),
+            Instr("DUP", [], {}),
+            Instr("DUG", [jump_length + 1], {}),
+        ]
+
     @debug
     def compile_assign_subscript(self, assign_subscript: ast.Assign, e: Env) -> List[Instr]:
-        dictionary = self._compile(assign_subscript.targets[0].value, e)
-        value = self._compile(assign_subscript.value, e)
-        key = self._compile(assign_subscript.targets[0].slice.value, e)
-        e.sp -= 2  # account for update dropping the key and value from the stack
-        dictionary_name = assign_subscript.targets[0].value.id
-        dict_addr = e.vars[dictionary_name]
-        free_old_dict, _ = self.free_var(dictionary_name, e)
-        replace_old_dict = [Instr("DUG", [e.sp - dict_addr], {})]
-        e.vars[dictionary_name] = dict_addr
-        return dictionary + value + [Instr("SOME", [], {})] +  key + [Instr("UPDATE", [], {})] + free_old_dict + replace_old_dict
 
-    @debug
-    def compile_assign_record(self, node: ast.Assign, e: Env) -> List[Instr]:
-        fetch_record = self._compile(node.targets[0], e)[:-1]
-        push_value = self._compile(node.value, e)
-        var_name = node.targets[0].value.id
-        record_name = self.env.types[var_name]
-        record_type = self.env.records[record_name]
-        update_record = record_type.update_tree_leaf(node.targets[0].attr, e)
+        if type(assign_subscript.targets[0].value) == ast.Attribute:
+            record_spec = self._get_record_spec(assign_subscript.targets[0].value, e)
 
+            # fetch the dictionary
+            #fetch_dict_bk = self._fetch_variable(record_spec["attribute_names"][0], e)
+            dictionary = self._get_record_with_replace(record_spec, e)  + [Instr("DUP", [], {})] + record_spec["records"][-1].navigate_to_tree_leaf(record_spec["attribute_names"][-1])
+            e.sp += 1  # account for DUP
+            value = self._compile(assign_subscript.value, e)
+            key = self._compile(assign_subscript.targets[0].slice.value, e)
+            update_dictionary =  dictionary + value + [Instr("SOME", [], {})] +  key + [Instr("UPDATE", [], {})]
+            e.sp -= 2  # account for update dropping the key and value from the stack
+
+            # set the record
+            set_dictionary = self._set_record(record_spec, e)
+
+            var_name = record_spec["attribute_names"][0]
+            return update_dictionary + set_dictionary + self._replace_var(var_name, e)
+
+        else:
+            dictionary = self._compile(assign_subscript.targets[0].value, e)
+            value = self._compile(assign_subscript.value, e)
+            key = self._compile(assign_subscript.targets[0].slice.value, e)
+            e.sp -= 2  # account for update dropping the key and value from the stack
+            #dictionary_name = assign_subscript.targets[0].value.id
+            dictionary_name = self._get_assign_subscript_target_addr(assign_subscript.targets[0].value)
+
+            update_dictionary = dictionary + value + [Instr("SOME", [], {})] +  key + [Instr("UPDATE", [], {})]
+            dict_addr = e.vars[dictionary_name]
+            free_old_dict, _ = self.free_var(dictionary_name, e)
+            replace_old_dict = [Instr("DUG", [e.sp - dict_addr], {})]
+            e.vars[dictionary_name] = dict_addr
+            return update_dictionary + free_old_dict + replace_old_dict
+
+    def _get_record_spec(self, node: ast.Attribute, e: Env):
+        acc = []
+        cond = True
+        attribute_names = []
+        current_node = node
+        while cond:
+            if type(current_node.value) == ast.Attribute:
+                acc.append(current_node.attr)
+                current_node = current_node.value
+                pass
+            elif type(current_node.value) == ast.Name:
+                acc.append(current_node.attr)
+                acc.append(current_node.value.id)
+                cond = False
+            else:
+                cond = False
+        acc.reverse()
+
+        records = []
+        for i, el in enumerate(acc[:-1]):
+            if i == 0:
+                record_type_name = e.types[el]
+                records.append(e.records[record_type_name])
+            else:
+                index = None
+                current_record = records[-1]
+                for i, attribute_name in enumerate(current_record.attribute_names):
+                    if attribute_name == el:
+                        index = i
+                nested_record_type = current_record.attribute_annotations[index].id
+                records.append(e.records[nested_record_type])
+
+        return {"attribute_names": acc, "records": records}
+
+    def _get_record_with_replace(self, record_spec, e: Env) -> List[Instr]:
+        attribute_names = record_spec["attribute_names"]
+        records = record_spec["records"]
+
+        instructions = self._compile(ast.Name(attribute_names[0], ctx=ast.Load()), e)
+
+        for i in range(len(records[:-1])):
+            instructions += [Instr("DUP", [], {})]
+            e.sp += 1
+            record = records[i]
+            attr_name = attribute_names[i + 1]
+            instructions += record.navigate_to_tree_leaf(attr_name)
+
+        return instructions
+
+    def _set_record(self, record_spec, e: Env) -> List[Instr]:
+        attribute_names = record_spec["attribute_names"]
+        records = record_spec["records"]
+        instructions = []
+        for i in range(len(records)):
+            reversed_i = len(records) - 1 - i
+            record = records[reversed_i]
+            attr_name = attribute_names[reversed_i + 1]
+            instructions += record.update_tree_leaf(attr_name, e)
+        return instructions
+
+    def _replace_var(self, var_name: str, e: Env) -> List[Instr]:
         # override new record with old record
         old_record_location = e.vars[var_name]
         free_old_record, _ = self.free_var(var_name, e)
@@ -275,7 +374,23 @@ class Compiler:
         ]
         e.vars[var_name] = old_record_location
 
-        return fetch_record + push_value + update_record + free_old_record + move_back_new_record
+        return free_old_record + move_back_new_record
+
+    @debug
+    def compile_assign_record(self, node: ast.Assign, e: Env) -> List[Instr]:
+        record_spec = self._get_record_spec(node.targets[0], e)
+        attribute_names = record_spec["attribute_names"]
+        var_name = attribute_names[0]
+
+        instructions = self._get_record_with_replace(record_spec, e)
+
+        instructions += self._compile(node.value, e)
+
+        instructions += self._set_record(record_spec, e)
+
+        instructions += self._replace_var(var_name, e)
+
+        return instructions
 
     @debug
     def compile_assign(self, assign: ast.Assign, e: Env) -> List[Instr]:
@@ -706,7 +821,6 @@ class Compiler:
         acc = []
         cond = True
         attribute_names = []
-        current_node = ast.parse("storage.bar.baz.yo").body[0].value
         current_node = attribute_ast
         while cond:
             if type(current_node.value) == ast.Attribute:
@@ -1033,6 +1147,58 @@ c = storage.info.c
             self.assertEqual(vm.stack.items[i].value, i + 1)
         # self.assertEqual(vm.stack.peek().__repr__(), '((1 * (2 * 3)) * 4)')
 
+    def test_doubly_nested_record_update(self):
+        source = """
+@dataclass
+class SubStorage:
+    a: int
+    b: int
+    c: int
+
+@dataclass
+class Storage:
+    info: SubStorage
+    counter: int
+
+storage = Storage(SubStorage(1, 2, 3), 4)
+storage.info.a = storage.info.a + 10
+        """
+        compiler = Compiler(source)
+        micheline = compiler.compile_expression()
+        vm = VM()
+        vm.execute(micheline)
+        self.assertEqual(vm.stack.peek().__repr__(), '((11 * (2 * 3)) * 4)')
+        self.assertEqual(len(vm.stack), 1)
+
+    def test_triply_nested_record_update(self):
+        source = """
+@dataclass
+class SubSubStorage:
+    a: int
+    b: int
+    c: int
+
+@dataclass
+class SubStorage:
+    a: int
+    sub_storage: SubSubStorage
+    c: int
+
+@dataclass
+class Storage:
+    info: SubStorage
+    counter: int
+
+storage = Storage(SubStorage(1, SubSubStorage(10, 20, 30), 2), 3)
+storage.info.sub_storage.b = 1000
+        """
+        compiler = Compiler(source)
+        micheline = compiler.compile_expression()
+        vm = VM()
+        vm.execute(micheline)
+        self.assertEqual(vm.stack.peek().__repr__(), '((1 * ((10 * (1000 * 30)) * 2)) * 3)')
+        self.assertEqual(len(vm.stack), 1)
+
     def test_record_create(self):
         source = """
 @dataclass
@@ -1048,6 +1214,53 @@ storage = Storage(1, 2, 3)
         vm = VM()
         vm.execute(micheline)
         self.assertEqual(vm.stack.peek().to_python_object(), (1, 2, 3))
+
+    def test_record_dict_attr(self):
+        source = """
+@dataclass
+class Storage:
+    ages: Dict[str, int]
+    b: int
+    c: int
+
+storage = Storage({}, 2, 3)
+foo = "yolo"
+storage.ages["foobar"] = 10
+storage.ages["foobar"]
+        """
+        micheline = Compiler(source).compile_expression()
+        vm = VM()
+        vm.execute(micheline)
+        self.assertEqual(vm.stack.items[0].value, 10)
+        self.assertEqual(vm.stack.items[1].value, "yolo")
+        self.assertEqual(vm.stack.items[2].__repr__(), "({'foobar': 10} * (2 * 3))")
+
+    def test_nested_record_dict_attr(self):
+        source = """
+@dataclass
+class SubStorage:
+    ages: Dict[str, int]
+    b: int
+    c: int
+
+@dataclass
+class Storage:
+    sub_storage: SubStorage
+    b: int
+
+storage = Storage(SubStorage({}, 1, 2), 3)
+foo = "yolo"
+storage
+storage.sub_storage.ages["foobar"] = 10
+storage.sub_storage.ages["foobar"]
+"""
+        micheline = Compiler(source).compile_expression()
+        vm = VM()
+        vm.execute(micheline)
+        self.assertEqual(vm.stack.items[0].value, 10)
+        self.assertEqual(vm.stack.items[1].__repr__(), "(({} * (1 * 2)) * 3)")
+        self.assertEqual(vm.stack.items[2].value, "yolo")
+        self.assertEqual(vm.stack.items[3].__repr__(), "(({'foobar': 10} * (1 * 2)) * 3)")
 
     def test_record_get(self):
         source = """
@@ -1493,8 +1706,6 @@ class Contract:
         }
         self.assertEqual(new_storage, expected_storage)
 
-
-
     def test_election(self):
         admin =  "tzaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         source = f"""
@@ -1670,7 +1881,7 @@ class Contract:
         expected_storage["name"] = "bar"
         self.assertEqual(new_storage, expected_storage)
 
-    def test_contract_multitype_storage(self):
+    def contract_multitype_storage(self):
         source = """
 @dataclass
 class Storage:
