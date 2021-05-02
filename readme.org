@@ -109,6 +109,8 @@ class TestContract(unittest.TestCase):
             assert e.args[0] == 'Insufficient sender balance'
 #+end_src
 
+** Testing the contract in the Pytezos Michelson REPL
+
 Finally, we can write a similar test using the PyTezos Michelson VM:
 
 #+begin_src python
