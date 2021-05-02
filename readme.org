@@ -1,221 +1,200 @@
 * Goal of the project
 
-We'd like to compile Python code to Tezos' Micelson bytecode using Python's  ~ast~ module. So fare, what has been implemented is:
+In order to simplify onboarding of new developers into the Tezos smartcontract ecosystem, the projects aim to implement a Python backend for Michelson. The goal is thus to allow writing Tezos smart contracts in Python such that the contract behaves isomorphically between the CPython interpreter and the Tezos virtual machine.
 
-- a virtual machine with a subset of Michelson bytecode. The VM is in ~vm.py~.
-- a compiler backend from a Python ast to the Michelson implemented in the VM to speed up development and allow easy testing. The compiler is in ~compiler.py~.
-- a backend compiler that converts the compiler's Michelson representation to actual Micheline. This backend is in ~compiler_backend.py~.
+Since a contract in PyMich is Python, this means that the classic Python tooling can be used with your favorite editor for linting (Pylint, Flake8, ...), type checking (MyPy, PyRighgt, ...), powerful language servers (PyRight, Python LSP, ...) and code formatters (black, yapf, ...).
 
-[1] https://tezos.gitlab.io/whitedoc/michelson.html
+This project is currently unstable and considered a proof of concept.
 
-* Usage
+* Example: a simple token contract
 
-** Deploy on sandbox
-
-Compile contract:
+Let us demonstrate how to write a simple token contract in PyMich and show that it behaves identically between the CPython interpreter and the PyTezos Michelson virtual machine:
 
 #+begin_src python
-from compiler import Compiler
-import json
+# contract.py
 
-source = """
-@dataclass
-class Storage:
-    admin: address
-    manifest_url: str
-    manifest_hash: str
-    open: str
-    close: str
-    artifacts_url: str
-    artifacts_hash: str
+from dataclasses import dataclass
+from typing import Dict
+from stubs import *
 
-@dataclass
-class OpenArg:
-    open: str
-    manifest_url: str
-    manifest_hash: str
+
+def require(condition: bool, message: str) -> int:
+    if not condition:
+        raise Exception(message)
+
+    return 0
+
 
 @dataclass
-class ArtifactsArg:
-    artifacts_url: str
-    artifacts_hash: str
-
 class Contract:
-    def deploy():
-        return Storage("tz1VSUr8wwNhLAzempoch5d6hLRiTh8Cjcjb", '', '', '', '', '', '')
+    balances: Dict[address, int]
+    total_supply: int
+    admin: address
 
-    def open(params: OpenArg) -> Storage:
-        if self.sender != self.storage.admin:
-            raise "Only owner can call open"
+    def mint(self, to: address, amount: int):
+        require(SENDER == self.admin, "Only admin can mint")
 
-        self.storage.open = params.open
-        self.storage.manifest_url = params.manifest_url
-        self.storage.manifest_hash = params.manifest_hash
+        self.total_supply = self.total_supply + amount
 
-        return self.storage
+        if to in self.balances:
+            self.balances[to] = self.balances[to] + amount
+        else:
+            self.balances[to] = amount
 
-    def close(params: str) -> Storage:
-        if self.sender != self.storage.admin:
-            raise "Only owner can call close"
+    def transfer(self, to: address, amount: int):
+        require(amount > 0, "You need to transfer a positive amount of tokens")
+        require(self.balances[SENDER] >= amount, "Insufficient sender balance")
 
-        self.storage.close = params
+        self.balances[SENDER] = self.balances[SENDER] - amount
 
-        return self.storage
+        if to in self.balances:
+            self.balances[to] = self.balances[to] + amount
+        else:
+            self.balances[to] = amount
 
-    def artifacts(params: ArtifactsArg) -> Storage:
-        if self.sender != self.storage.admin:
-            raise "Only owner can call artifacts"
-
-        self.storage.artifacts_url = params.artifacts_url
-        self.storage.artifacts_hash = params.artifacts_hash
-
-        return self.storage
-"""
-contract = Compiler(source).compile().contract
-micheline = CompilerBackend().compile_contract(contract)
-
-with open("my_contract.json", "w+") as f:
-    f.write(json.dumps(micheline))
 #+end_src
 
-Run contract on tezos sandbox using pytezos:
+** Testing the contract in CPython
 
 #+begin_src python
-from pytezos import pytezos
+# contract_python_test.py
 
-key = pytezos.key.from_encoded_key("edsk3QoqBuvdamxouPhin7swCvkQNgq4jP5KZPbwWNnwdZpSpJiEbq")
-sandbox_url = "http://tz:20000"
-client = pytezos.using(key=key, shell=sandbox_url)
+import unittest
+from pytezos.michelson.micheline import MichelsonRuntimeError
+import stubs
+admin = "Mrs. Foo"
+stubs.SENDER = admin
 
-from pytezos import Contract
+from contract import Contract
 
-with open("my_contract.json") as f:
+
+class TestContract(unittest.TestCase):
+    def test_mint(self):
+        from contract import Contract
+        contract = Contract(admin=admin, balances={}, total_supply=0)
+        amount = 10
+        contract.mint(admin, amount)
+
+        assert contract.balances[admin] == amount
+
+        contract = Contract(admin="yolo", balances={}, total_supply=0)
+        try:
+            contract.mint(admin, amount)
+            assert 0
+        except Exception as e:
+            assert e.args[0] == 'Only admin can mint'
+
+    def test_transfer(self):
+        amount_1 = 10
+        contract = Contract(admin=admin, balances={admin: amount_1}, total_supply=amount_1)
+
+        investor = "Mr. Bar"
+        amount_2 = 4
+
+        contract.transfer(investor, amount_2)
+
+        assert contract.balances[admin] == amount_1 - amount_2
+        assert contract.balances[investor] == amount_2
+
+        try:
+            contract.transfer(admin, -10)
+            assert 0
+        except Exception as e:
+            assert e.args[0] == 'You need to transfer a positive amount of tokens'
+
+        try:
+            contract.transfer(admin, 100)
+            assert 0
+        except Exception as e:
+            assert e.args[0] == 'Insufficient sender balance'
+#+end_src
+
+Finally, we can write a similar test using the PyTezos Michelson VM:
+
+#+begin_src python
+# contract_michelson_test.py
+
+import unittest
+from compiler import Compiler
+from compiler import VM
+from pytezos.michelson.micheline import MichelsonRuntimeError
+
+with open("contract.py") as f:
     source = f.read()
 
-import json
-from pytezos import ContractInterface
-micheline = json.loads(source)
-ci = ContractInterface.from_micheline(micheline)
 
-init_storage = {'prim': 'Pair', 'args': [{'prim': 'Pair', 'args': [{'prim': 'Pair', 'args': [{'string': 'tz1VSUr8wwNhLAzempoch5d6hLRiTh8Cjcjb'}, {'string': ''}]}, {'string': ''}, {'string': ''}]}, {'prim': 'Pair', 'args': [{'string': ''}, {'string': ''}]}, {'string': ''}]}
+class TestContract(unittest.TestCase):
+    def test_mint(self):
+        micheline = Compiler(source).compile_contract()
+        vm = VM()
+        vm.load_contract(micheline)
 
-operation = client.origination(dict(code=micheline, storage=init_storage)).autofill().sign().inject()
-result = client.shell.blocks[-200:].find_operation(operation['hash'])
-contract_id = result['contents'][0]['metadata']['operation_result']['originated_contracts'][0]
-contract = client.contract(contract_id)
+        init_storage = vm.contract.storage.dummy()
+        init_storage['admin'] = vm.context.sender
+
+        new_storage = vm.contract.mint({"to": vm.context.sender, "amount": 10}).interpret(storage=init_storage, sender=vm.context.sender).storage
+        self.assertEqual(new_storage['balances'], {vm.context.sender: 10})
+
+        try:
+            vm.contract.mint({"to": vm.context.sender, "amount": 10}).interpret(storage=init_storage).storage
+            assert 0
+        except MichelsonRuntimeError as e:
+            self.assertEqual(e.format_stdout(), "FAILWITH: 'Only admin can mint'")
+
+    def test_transfer(self):
+        micheline = Compiler(source).compile_contract()
+        vm = VM()
+        vm.load_contract(micheline)
+
+        init_storage = vm.contract.storage.dummy()
+        init_storage['admin'] = vm.context.sender
+        init_storage['balances'] = {vm.context.sender: 10}
+
+        investor = "KT1EwUrkbmGxjiRvmEAa8HLGhjJeRocqVTFi"
+        new_storage = vm.contract.transfer({"to": investor, "amount": 4}).interpret(storage=init_storage, sender=vm.context.sender).storage
+        self.assertEqual(new_storage['balances'], {vm.context.sender: 6, investor: 4})
+
+        try:
+            vm.contract.transfer({"to": investor, "amount": -10}).interpret(storage=new_storage).storage
+            assert 0
+        except MichelsonRuntimeError as e:
+            self.assertEqual(e.format_stdout(), "FAILWITH: 'You need to transfer a positive amount of tokens'")
+
+        try:
+            vm.contract.transfer({"to": investor, "amount": 10}).interpret(storage=new_storage, sender=vm.context.sender).storage
+            assert 0
+        except MichelsonRuntimeError as e:
+            self.assertEqual(e.format_stdout(), "FAILWITH: 'Insufficient sender balance'")
 #+end_src
+  
+As we can see, we've written the same tests for both the Python interpreter and the PyTezos VM. As expected, the contract behaves the same way.
 
-We can now interact with the contract, let's list its entrypoints:
+* Using existing Python tooling
 
-#+begin_src python
-contract
-#+end_src
+Bellow are examples of autocomplete, linting and typechecking with Pyright in Emacs. Since I already had it setup to work with Python, it already works with PyMich !
 
-#+begin_src
-[...]
+Autocomplete:
 
-Entrypoints
-.artifacts()
-.close()
-.open()
-.default()
+[[./images/py-mich-autocomplete.png]]
 
-[...]
-#+end_src
+Linting:
 
-We can inspect the storage type:
+[[./images/py-mich-linting.png]]
 
-#+begin_src python
-contract.storage
-#+end_src
+Typechecking:
 
-#+begin_src python
-[...]
-
-Typedef
-$storage:
-  {
-    "admin": address,
-    "manifest_url": string,
-    "manifest_hash": string,
-    "open": string,
-    "close": string,
-    "artifacts_url": string,
-    "artifacts_hash": string
-  }
-
-[...]
-#+end_src
-
-As well as the storage value:
-
-#+begin_src python
-contract.storage()
-#+end_src
-
-#+begin_src python
-{'admin': 'tz1VSUr8wwNhLAzempoch5d6hLRiTh8Cjcjb', 'manifest_url': '', 'manifest_hash': '', 'open': '', 'close': '', 'artifacts_url': '', 'artifacts_hash': ''}
-#+end_src
-
-We can see what the entrypoint type is:
-
-#+begin_src python
-contract.open
-#+end_src
-
-#+begin_src python
-[...]
-
-Typedef
-$open:
-	{
-	  "open": string,
-	  "manifest_url": string,
-	  "manifest_hash": string
-	}
-
-[...]
-#+end_src
-
-And call it seemlessly:
-
-#+begin_src python
-contract.open("4-mar-21", "http://my_manifest", "134AUIE134EI").inject()
-#+end_src
-
-#+begin_src python
-[...]
-#+end_src
-
-#+begin_src python
-contract.storage()
-#+end_src
-
-#+begin_src python
-{'admin': 'tz1VSUr8wwNhLAzempoch5d6hLRiTh8Cjcjb', 'manifest_url': 'http://my_manifest', 'manifest_hash': '134AUIE134EI', 'open': '4-mar-21', 'close': '', 'artifacts_url': '', 'artifacts_hash': ''}
-#+end_src
-
-We can also call the contract from another address than the storage admin and witness the `FAILWITH` exception:
-
-#+begin_src python
-from pytezos.rpc.errors import MichelsonError
-
-key2 = "edsk3RFfvaFaxbHx8BMtEW1rKQcPtDML3LXjNqMNLCzC3wLC1bWbAt"
-client2 = pytezos.using(key=key2, shell=sandbox_url)
-try:
-    client2.contract(contract_id).open("foobar", "foobar", "foobar").inject()
-    assert 0
-except MichelsonError:
-    assert 1
-#+end_src
+[[./images/py-mich-typechecking.png]]
+  
 
 * Todo
 
-- [ ] multi argument functions
-- [ ] dictionnaries
+- [x] multi argument functions
+- [x] dictionnaries
+- [x] functions
 - [ ] lists
+- [ ] tuples
 - [ ] closures
-- [ ] nested records
+- [x] nested records
 - [ ] tuples
 
 * Pass 1: AST expansion
