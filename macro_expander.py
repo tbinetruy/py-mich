@@ -171,11 +171,7 @@ class ExpandStorageInEntrypoints(ast.NodeTransformer):
         if node.value.id != 'self':
             return node
 
-        node.value = ast.Attribute(
-            value=ast.Name(id=node.value.id, ctx=ast.Load()),
-            attr='storage',
-            ctx=ast.Load()
-        )
+        node.value.id = '__STORAGE__'
 
         return node
 
