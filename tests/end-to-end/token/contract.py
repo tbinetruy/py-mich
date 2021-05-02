@@ -21,25 +21,19 @@ class Contract:
 
         self.total_supply = self.total_supply + amount
 
-        balances = self.balances
-        if to in balances:
-            balances[to] = balances[to] + amount
+        if to in self.balances:
+            self.balances[to] = self.balances[to] + amount
         else:
-            balances[to] = amount
-        self.balances = balances
+            self.balances[to] = amount
 
     def transfer(self, to: address, amount: int):
-        balances = self.balances
-
         require(amount > 0, "You need to transfer a positive amount of tokens")
-        require(balances[SENDER] >= amount, "Insufficient sender balance")
+        require(self.balances[SENDER] >= amount, "Insufficient sender balance")
 
-        balances[SENDER] = balances[SENDER] - amount
+        self.balances[SENDER] = self.balances[SENDER] - amount
 
-        if to in balances:
-            balances[to] = balances[to] + amount
+        if to in self.balances:
+            self.balances[to] = self.balances[to] + amount
         else:
-            balances[to] = amount
-
-        self.balances = balances
+            self.balances[to] = amount
 
