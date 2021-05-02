@@ -82,6 +82,14 @@ class Record(Tree):
         else:
             return self.make_node(attribute_type, self.get_type(i+1))
 
+    def get_attribute_type(self, attribute_name: str):
+        attribute_index = self.attribute_names.index(attribute_name)
+        return self.attribute_types[attribute_index]
+
+    def get_attribute_annotation(self, attribute_name: str):
+        attribute_index = self.attribute_names.index(attribute_name)
+        return self.attribute_annotations[attribute_index]
+
     def navigate_to_tree_leaf(self, attribute_name, acc=None):
         el_number = 1
         for i, candidate in enumerate(self.attribute_names):
@@ -814,48 +822,37 @@ class Compiler:
         return [Instr("SENDER", [], {})]
 
     @debug
+    def _compile_attribute(self, node: ast.Attribute, e: Env, instructions = None, recursing = False):
+        if instructions is None:
+            instructions = []
+
+        if type(node.value) == ast.Attribute:
+            instructions, new_record = self._compile_attribute(node.value, e, instructions, True)
+            instructions += new_record.navigate_to_tree_leaf(node.attr)
+            if recursing:
+                return instructions, new_record
+        elif type(node.value) == ast.Name:
+            var_name = node.value.id
+            var_type = e.types[var_name]
+            record = e.records[var_type]
+            instructions += self._compile(node.value, e)
+            instructions += record.navigate_to_tree_leaf(node.attr)
+            if recursing:
+                new_record_name = record.get_attribute_annotation(node.attr).id
+                new_record = e.records[new_record_name]
+                return instructions, new_record
+        else:
+            raise NotImplementedError
+
+        return instructions
+
+
+    @debug
     def compile_attribute(self, attribute_ast: ast.Attribute, e: Env) -> List[Instr]:
         if self.check_get_storage(attribute_ast):
             return self.handle_get_storage(attribute_ast, e)
 
-        acc = []
-        cond = True
-        attribute_names = []
-        current_node = attribute_ast
-        while cond:
-            if type(current_node.value) == ast.Attribute:
-                acc.append(current_node.attr)
-                current_node = current_node.value
-                pass
-            elif type(current_node.value) == ast.Name:
-                acc.append(current_node.attr)
-                acc.append(current_node.value.id)
-                cond = False
-            else:
-                cond = False
-        acc.reverse()
-
-        records = []
-        for i, el in enumerate(acc[:-1]):
-            if i == 0:
-                record_type_name = e.types[el]
-                records.append(e.records[record_type_name])
-            else:
-                index = None
-                current_record = records[-1]
-                for i, attribute_name in enumerate(current_record.attribute_names):
-                    if attribute_name == el:
-                        index = i
-                nested_record_type = current_record.attribute_annotations[index].id
-                records.append(e.records[nested_record_type])
-
-        instructions = self._compile(ast.Name(acc[0], ctx=ast.Load()), e)
-        for i in range(len(records)):
-            record = records[i]
-            attr_name = acc[i + 1]
-            instructions += record.navigate_to_tree_leaf(attr_name)
-
-        return instructions
+        return self._compile_attribute(attribute_ast, e)
 
     @debug
     def compile_compare(self, compare_ast: ast.Compare, e: Env) -> List[Instr]:
@@ -1005,8 +1002,8 @@ class Compiler:
 
         return instructions
 
-    def compile_expression(self):
-        instructions = self._compile(self.ast)
+    def compile_expression(self, e: Env = None):
+        instructions = self._compile(self.ast, e)
         return CompilerBackend().compile_instructions(instructions)
 
     def compile_contract(self):
@@ -1120,6 +1117,56 @@ balances['user']
 
 
 class TestRecord(unittest.TestCase):
+    def test_nesting_records(self):
+        vm = VM()
+        source = """
+@dataclass
+class KYC:
+    address: str
+    name: str
+
+@dataclass
+class Account:
+    name: str
+    balance: int
+    kyc: KYC
+
+@dataclass
+class Storage:
+    counter: int
+    owner: Account
+
+store = Storage(0, Account("pymich", 1000, KYC("kyc_address", "kyc_name")))
+"""
+        compiler = Compiler(source)
+        micheline = compiler.compile_expression()
+        attr_ast = ast.parse("store.owner").body[0].value
+        instructions = compiler._compile_attribute(attr_ast, compiler.env)
+        micheline2 = CompilerBackend().compile_instructions(instructions)
+        vm.execute(micheline)
+        vm.execute(micheline2)
+        self.assertEqual(vm.stack.items[0].__repr__(), "('pymich' * (1000 * ('kyc_address' * 'kyc_name')))")
+
+        vm = VM()
+        compiler = Compiler(source)
+        micheline = compiler.compile_expression()
+        attr_ast = ast.parse("store.owner.kyc").body[0].value
+        instructions = compiler._compile_attribute(attr_ast, compiler.env)
+        micheline2 = CompilerBackend().compile_instructions(instructions)
+        vm.execute(micheline)
+        vm.execute(micheline2)
+        self.assertEqual(vm.stack.peek().__repr__(), "('kyc_address' * 'kyc_name')")
+
+        vm = VM()
+        compiler = Compiler(source)
+        micheline = compiler.compile_expression()
+        attr_ast = ast.parse("store.owner.kyc.name").body[0].value
+        instructions = compiler._compile_attribute(attr_ast, compiler.env)
+        micheline2 = CompilerBackend().compile_instructions(instructions)
+        vm.execute(micheline)
+        vm.execute(micheline2)
+        self.assertEqual(vm.stack.peek().value, "kyc_address")
+
     def test_nested_record_create(self):
         source = """
 @dataclass
