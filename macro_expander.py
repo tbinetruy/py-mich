@@ -259,6 +259,20 @@ class FactorOutStorage(ast.NodeTransformer):
         return node
 
 
+class PlaceBackStorageDataclass(ast.NodeTransformer):
+    def __init__(self, storage_dataclass: ast.ClassDef):
+        super().__init__()
+        self.storage_dataclass = storage_dataclass
+
+    def visit_Module(self, node: ast.Module) -> Any:
+        el_number = 0
+        for i, el in enumerate(node.body):
+            if type(el) == ast.ClassDef and el.name == "Contract":
+                el_number = i
+
+        node.body.insert(el_number, self.storage_dataclass)
+        return node
+
 def macro_expander(source_ast):
     pass1 = FactorOutStorage()
     pass2 = RemoveSelfArgFromMethods()
@@ -270,7 +284,7 @@ def macro_expander(source_ast):
     new_ast = pass4.visit(new_ast)
     new_ast.body = pass3.dataclasses + new_ast.body
     if hasattr(pass1, 'storage_dataclass'):
-        new_ast.body = [pass1.storage_dataclass] + new_ast.body
+        new_ast = PlaceBackStorageDataclass(pass1.storage_dataclass).visit(new_ast)
     return ast.fix_missing_locations(new_ast)
 
 
