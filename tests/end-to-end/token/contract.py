@@ -2,38 +2,64 @@ from dataclasses import dataclass
 from typing import Dict
 from stubs import *
 
-
-def require(condition: bool, message: str) -> int:
-    if not condition:
-        raise Exception(message)
-
-    return 0
-
+@dataclass
+class AllowanceKey:
+    owner: address
+    spender: address
 
 @dataclass
 class Contract:
-    balances: Dict[address, int]
+    tokens: Dict[address, int]
+    allowances: Dict[AllowanceKey, int]
     total_supply: int
-    admin: address
+    owner: address
 
-    def mint(self, to: address, amount: int):
-        require(SENDER == self.admin, "Only admin can mint")
+    def mint(self, _to: address, value: int):
+        if SENDER != self.owner:
+            raise Exception("Only owner can mint")
 
-        self.total_supply = self.total_supply + amount
+        self.total_supply = self.total_supply + value
 
-        if to in self.balances:
-            self.balances[to] = self.balances[to] + amount
+        if _to in self.tokens:
+            self.tokens[_to] = self.tokens[_to] + value
         else:
-            self.balances[to] = amount
+            self.tokens[_to] = value
 
-    def transfer(self, to: address, amount: int):
-        require(amount > 0, "You need to transfer a positive amount of tokens")
-        require(self.balances[SENDER] >= amount, "Insufficient sender balance")
+    def approve(self, spender: address, value: int):
+        allowance_key = AllowanceKey(SENDER, spender)
 
-        self.balances[SENDER] = self.balances[SENDER] - amount
+        previous_value = 0
+        if allowance_key in self.allowances:
+            previous_value = self.allowances[allowance_key]
 
-        if to in self.balances:
-            self.balances[to] = self.balances[to] + amount
-        else:
-            self.balances[to] = amount
+        if previous_value > 0 and value > 0:
+            raise Exception("UnsafeAllowanceChange")
 
+        self.allowances[allowance_key] = value
+
+    def transfer(self, _from: address, _to: address, value: int):
+        if SENDER != _from:
+            allowance_key = AllowanceKey(_from, SENDER)
+            authorized_value = 0
+            if allowance_key in self.allowances:
+                authorized_value = self.allowances[allowance_key]
+
+            if (authorized_value - value) < 0:
+                raise Exception("NotEnoughAllowance")
+
+            self.allowances[allowance_key] = authorized_value - value
+
+        from_balance = 0
+        if _from in self.tokens:
+            from_balance = self.tokens[_from]
+
+        if from_balance - value < 0:
+            raise Exception("NotEnoughBalance")
+
+        self.tokens[_from] = from_balance - value
+
+        to_balance = 0
+        if _to in self.tokens:
+            to_balance = self.tokens[_to]
+
+        self.tokens[_to] = to_balance + value

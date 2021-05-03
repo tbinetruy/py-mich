@@ -22,42 +22,64 @@ class TestContract(unittest.TestCase):
         vm = VM()
         vm.load_contract(micheline)
 
-        init_storage = vm.contract.storage.dummy()
-        init_storage['admin'] = vm.context.sender
+        storage = vm.contract.storage.dummy()
+        storage['owner'] = vm.context.sender
 
-        new_storage = vm.contract.mint({"to": vm.context.sender, "amount": 10}).interpret(storage=init_storage, sender=vm.context.sender).storage
-        self.assertEqual(new_storage['balances'], {vm.context.sender: 10})
+        storage = vm.contract.mint({"_to": vm.context.sender, "value": 10}).interpret(storage=storage, sender=vm.context.sender).storage
+        self.assertEqual(storage['tokens'], {vm.context.sender: 10})
 
         try:
-            vm.contract.mint({"to": vm.context.sender, "amount": 10}).interpret(storage=init_storage).storage
+            vm.contract.mint({"_to": vm.context.sender, "value": 10}).interpret(storage=storage).storage
             assert 0
         except MichelsonRuntimeError as e:
-            self.assertEqual(e.format_stdout(), "FAILWITH: 'Only admin can mint'")
+            self.assertEqual(e.format_stdout(), "FAILWITH: 'Only owner can mint'")
 
     def test_transfer(self):
         micheline = Compiler(source).compile_contract()
         vm = VM()
         vm.load_contract(micheline)
 
-        init_storage = vm.contract.storage.dummy()
-        init_storage['admin'] = vm.context.sender
-        init_storage['balances'] = {vm.context.sender: 10}
+        storage = vm.contract.storage.dummy()
+        storage['owner'] = vm.context.sender
+        storage['tokens'] = {vm.context.sender: 10}
 
         investor = "KT1EwUrkbmGxjiRvmEAa8HLGhjJeRocqVTFi"
-        new_storage = vm.contract.transfer({"to": investor, "amount": 4}).interpret(storage=init_storage, sender=vm.context.sender).storage
-        self.assertEqual(new_storage['balances'], {vm.context.sender: 6, investor: 4})
+        storage = vm.contract.transfer({"_to": investor, "_from": vm.context.sender, "value": 4}).interpret(storage=storage, sender=vm.context.sender).storage
+        self.assertEqual(storage['tokens'], {vm.context.sender: 6, investor: 4})
 
         try:
-            vm.contract.transfer({"to": investor, "amount": -10}).interpret(storage=new_storage).storage
+            vm.contract.transfer({"_from": vm.context.sender, "_to": investor, "value": 10}).interpret(storage=storage, sender=vm.context.sender).storage
             assert 0
         except MichelsonRuntimeError as e:
-            self.assertEqual(e.format_stdout(), "FAILWITH: 'You need to transfer a positive amount of tokens'")
+            self.assertEqual(e.format_stdout(), "FAILWITH: 'NotEnoughBalance'")
 
         try:
-            vm.contract.transfer({"to": investor, "amount": 10}).interpret(storage=new_storage, sender=vm.context.sender).storage
+            vm.contract.transfer({"_from": vm.context.sender, "_to": investor, "value": 10}).interpret(storage=storage, sender=investor).storage
             assert 0
         except MichelsonRuntimeError as e:
-            self.assertEqual(e.format_stdout(), "FAILWITH: 'Insufficient sender balance'")
+            self.assertEqual(e.format_stdout(), "FAILWITH: 'NotEnoughAllowance'")
+
+        storage["allowances"] = {(vm.context.sender, investor): 10}
+        storage = vm.contract.transfer({"_from": vm.context.sender, "_to": investor, "value": 2}).interpret(storage=storage, sender=investor).storage
+        assert storage["tokens"][investor] == 6
+
+        try:
+            vm.contract.transfer({"_from": vm.context.sender, "_to": investor, "value": 8}).interpret(storage=storage, sender=investor).storage
+            assert 0
+        except MichelsonRuntimeError as e:
+            self.assertEqual(e.format_stdout(), "FAILWITH: 'NotEnoughBalance'")
+
+    def test_approve(self):
+        micheline = Compiler(source).compile_contract()
+        vm = VM()
+        vm.load_contract(micheline)
+
+        storage = vm.contract.storage.dummy()
+        storage['owner'] = vm.context.sender
+
+        investor = "KT1EwUrkbmGxjiRvmEAa8HLGhjJeRocqVTFi"
+        storage = vm.contract.approve({"spender": investor, "value": 4}).interpret(storage=storage, sender=vm.context.sender).storage
+        self.assertEqual(storage['allowances'], {(vm.context.sender, investor): 4})
 
 if __name__ == "__main__":
     unittest.main()
