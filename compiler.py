@@ -800,6 +800,10 @@ class Compiler:
             return self.compile_name(ast.Name(id='__STORAGE__', ctx=ast.Load()), e)
 
     def check_get_storage(self, storage_get_ast: ast.Attribute) -> bool:
+        # tmp fix
+        if type(storage_get_ast.value) == ast.Subscript:
+            return False
+
         try:
             return (
                 storage_get_ast.value.value.id == "self"
@@ -826,16 +830,41 @@ class Compiler:
         if instructions is None:
             instructions = []
 
+        def get_next_record(annotation):
+            if type(annotation) == ast.Name:
+                return annotation.id
+            elif type(annotation) == ast.Subscript:
+                if len(annotation.slice.value.elts) == 2:
+                    # dict
+                    return annotation.slice.value.elts[1].id
+                elif len(annotation.slice.value.elts) == 1:
+                    # list
+                    raise NotImplementedError
+                else:
+                    raise NotImplementedError
+
         if type(node.value) == ast.Attribute:
-            instructions, new_record = self._compile_attribute(node.value, e, instructions, True)
-            instructions += new_record.navigate_to_tree_leaf(node.attr)
+            instructions, record = self._compile_attribute(node.value, e, instructions, True)
+            instructions += record.navigate_to_tree_leaf(node.attr)
             if recursing:
+                new_record_name = record.get_attribute_annotation(node.attr).id
+                new_record = e.records[new_record_name]
                 return instructions, new_record
         elif type(node.value) == ast.Name:
             var_name = node.value.id
             var_type = e.types[var_name]
             record = e.records[var_type]
             instructions += self._compile(node.value, e)
+            instructions += record.navigate_to_tree_leaf(node.attr)
+            if recursing:
+                new_record_annotation = record.get_attribute_annotation(node.attr)
+                new_record_name = get_next_record(new_record_annotation)
+                new_record = e.records[new_record_name]
+                return instructions, new_record
+        elif type(node.value) == ast.Subscript:
+            instructions, record = self._compile_attribute(node.value.value, e, instructions, True)
+            instructions += self._compile(node.value.slice.value, e)
+            instructions += self._compile_get_subscript(e)
             instructions += record.navigate_to_tree_leaf(node.attr)
             if recursing:
                 new_record_name = record.get_attribute_annotation(node.attr).id
@@ -905,11 +934,9 @@ class Compiler:
             pass
         return self._compile(raise_ast.exc.args[0], e) + [Instr("FAILWITH", [], {})]
 
-    def compile_subscript(self, subscript: ast.Subscript, e: Env) -> List[Instr]:
-        dictionary = self._compile(subscript.value, e)
-        key = self._compile(subscript.slice.value, e)
+    def _compile_get_subscript(self, e: Env) -> List[Instr]:
         e.sp -= 1  # account for get
-        get_instructions = [
+        return [
             Instr("GET", [], {}),
             Instr("IF_NONE", [
                 [
@@ -919,6 +946,11 @@ class Compiler:
                 [],
             ], {}),
         ]
+
+    def compile_subscript(self, subscript: ast.Subscript, e: Env) -> List[Instr]:
+        dictionary = self._compile(subscript.value, e)
+        key = self._compile(subscript.slice.value, e)
+        get_instructions = self._compile_get_subscript(e)
         return dictionary + key + get_instructions
 
     def compile_unary_op(self, node: ast.UnaryOp, e: Env) -> List[Instr]:
@@ -1046,6 +1078,49 @@ class VM:
 
 
 class TestDict(unittest.TestCase):
+    def test_record_valued_dict(self):
+        vm = VM()
+        source = """
+@dataclass
+class Account:
+    name: str
+    balance: int
+
+@dataclass
+class Storage:
+    accounts: Dict[str, Account]
+    owner: str
+
+store = Storage({}, "pymich")
+store.accounts["my_hash"] = Account("pymich", 1000)
+store.accounts["my_hash"].name
+"""
+        micheline = Compiler(source).compile_expression()
+        vm.execute(micheline)
+        self.assertEqual(vm.stack.peek().value, 'pymich')
+
+    def test_record_key_dict(self):
+        vm = VM()
+        source = """
+@dataclass
+class Key:
+    a: int
+    b: int
+
+@dataclass
+class Storage:
+    accounts: Dict[Key, str]
+    owner: str
+
+store = Storage({}, "pymich")
+key = Key(10, 20)
+store.accounts[key] = "hello"
+store.accounts[key]
+"""
+        micheline = Compiler(source).compile_expression()
+        vm.execute(micheline)
+        self.assertEqual(vm.stack.peek().value, 'hello')
+
     def test_get_dict_no_key_error(self):
         source = """
 @dataclass
@@ -1165,7 +1240,7 @@ store = Storage(0, Account("pymich", 1000, KYC("kyc_address", "kyc_name")))
         micheline2 = CompilerBackend().compile_instructions(instructions)
         vm.execute(micheline)
         vm.execute(micheline2)
-        self.assertEqual(vm.stack.peek().value, "kyc_address")
+        self.assertEqual(vm.stack.peek().value, "kyc_name")
 
     def test_nested_record_create(self):
         source = """
