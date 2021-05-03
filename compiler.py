@@ -1024,6 +1024,10 @@ class Compiler:
         elif type(node_ast) == ast.UnaryOp:
             instructions += self.compile_unary_op(node_ast, e)
         elif type(node_ast) == ast.ImportFrom:
+            # Skip for now
+            pass
+        elif type(node_ast) == ast.BoolOp:
+            instructions += self.compile_bool_op(node_ast, e)
             pass
         else:
             breakpoint()
@@ -1033,6 +1037,21 @@ class Compiler:
             print(e)
 
         return instructions
+
+    def compile_bool_op(self, node: ast.BoolOp, e: Env) -> List[Instr]:
+        # AND / x : y : S  =>  (x & y) : S
+        # y is pushed first
+        y = self._compile(node.values[1], e)
+        x = self._compile(node.values[0], e)
+        operand_instr = None
+        if type(node.op) == ast.And:
+            operand_instr = Instr("AND", [], {})
+        elif type(node.op) == ast.Or:
+            operand_instr = Instr("OR", [], {})
+        else:
+            raise NotImplementedError
+        e.sp -= 1  # account for bool_op
+        return y + x + [operand_instr]
 
     def compile_expression(self, e: Env = None):
         instructions = self._compile(self.ast, e)
@@ -2310,6 +2329,19 @@ else:
         vm = VM()
         vm.execute(micheline)
         self.assertEqual(vm.stack.peek(), BoolType(False))
+
+    def test_and(self):
+        sources = [
+            ("True and False", False),
+            ("True and True", True),
+            ("False and False", False),
+            ("False and True", False),
+        ]
+        for source, answer in sources:
+            micheline = Compiler(source).compile_expression()
+            vm = VM()
+            vm.execute(micheline)
+            self.assertEqual(vm.stack.peek().to_python_object(), answer)
 
     def test_import(self):
         source = """

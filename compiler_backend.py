@@ -145,6 +145,10 @@ class CompilerBackend:
                     "prim": "GET",
                     "args": [{"int": str(instruction.args[1])}]
                 }
+        elif instruction.name == "AND":
+            return {"prim": "AND"}
+        elif instruction.name == "OR":
+            return {"prim": "OR"}
         elif instruction.name == "FAILWITH":
             return {"prim": "FAILWITH"}
         elif instruction.name == "SOME":
