@@ -98,6 +98,9 @@ class TuplifyFunctionArguments(ast.NodeTransformer):
         return node
 
     def visit_Call(self, node: ast.Call) -> Any:
+        if type(node.func) == ast.Attribute and node.func.attr == "get":
+            return node
+
         fun_name = node.func.id
         if len(node.args) > 1 and fun_name not in self.defined_class_names:
             node.args = [
@@ -168,6 +171,10 @@ class RemoveSelfArgFromMethods(ast.NodeTransformer):
 
 class ExpandStorageInEntrypoints(ast.NodeTransformer):
     def visit_Attribute(self, node: ast.Attribute) -> Any:
+        if type(node.value) == ast.Attribute:
+            node.value = self.visit(node.value)
+            return node
+
         if node.value.id != 'self':
             return node
 
