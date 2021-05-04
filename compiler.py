@@ -637,7 +637,9 @@ class Compiler:
 
         e.sp -= 1  # account for get
 
-        default = self._compile(default, e)
+        if_not_env = e.copy()
+        if_not_env.sp -= 1  # account for if none
+        default = self._compile(default, if_not_env)
         return key + [
             Instr("GET", [], {}),
             Instr("IF_NONE", [default, []], {}),
@@ -1130,9 +1132,11 @@ store = Storage({}, 0)
 store.accounts.get("my_key", "some_default")
 """
         vm = VM()
-        micheline = Compiler(source).compile_expression()
+        compiler = Compiler(source)
+        micheline = compiler.compile_expression()
         vm.execute(micheline)
         self.assertEqual(vm.stack.peek().value, 'some_default')
+        self.assertEqual(compiler.env.sp, 1)
 
         source = """
 @dataclass
@@ -1148,6 +1152,7 @@ store.accounts.get("my_key", "some_default")
         micheline = Compiler(source).compile_expression()
         vm.execute(micheline)
         self.assertEqual(vm.stack.peek().value, 'my_value')
+        self.assertEqual(compiler.env.sp, 1)
 
     def test_record_valued_dict(self):
         vm = VM()
