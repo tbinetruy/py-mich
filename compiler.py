@@ -629,8 +629,29 @@ class Compiler:
         instructions = e.records[c.func.id].compile_record(c.args, self._compile, e)
         return instructions
 
+    def _compile_dict_safe_get(self, key, default, e: Env) -> List[Instr]:
+        # dictionary = self._compile(subscript.value, e)
+        key = self._compile(key, e)
+        # get_instructions = self._compile_get_subscript(e)
+        # return dictionary + key + get_instructions
+
+        e.sp -= 1  # account for get
+
+        default = self._compile(default, e)
+        return key + [
+            Instr("GET", [], {}),
+            Instr("IF_NONE", [default, []], {}),
+        ]
+
     @debug
     def compile_fcall(self, f: ast.Call, e: Env):
+        # check if we are calling .dict on a dictionary
+        if type(f.func) == ast.Attribute and f.func.attr == "get":
+            instructions = self._compile(f.func.value, e)
+            instructions += self._compile_dict_safe_get(f.args[0], f.args[1], e)
+            return instructions
+
+
         # if dealing with a record instantiation, compile as such
         if f.func.id in e.records.keys():
             return self.compile_ccall(f, e)
@@ -1097,6 +1118,37 @@ class VM:
 
 
 class TestDict(unittest.TestCase):
+    def test_dict_get_with_default(self):
+        source = """
+@dataclass
+class Storage:
+    accounts: Dict[str, int]
+    counter: int
+
+store = Storage({}, 0)
+#store.accounts
+store.accounts.get("my_key", "some_default")
+"""
+        vm = VM()
+        micheline = Compiler(source).compile_expression()
+        vm.execute(micheline)
+        self.assertEqual(vm.stack.peek().value, 'some_default')
+
+        source = """
+@dataclass
+class Storage:
+    accounts: Dict[str, int]
+    counter: int
+
+store = Storage({}, 0)
+store.accounts["my_key"] = "my_value"
+store.accounts.get("my_key", "some_default")
+"""
+        vm = VM()
+        micheline = Compiler(source).compile_expression()
+        vm.execute(micheline)
+        self.assertEqual(vm.stack.peek().value, 'my_value')
+
     def test_record_valued_dict(self):
         vm = VM()
         source = """
