@@ -50,6 +50,14 @@ class CompilerBackend:
                     self.compile_type(parameter.value_type),
                 ]
             }
+        elif type(parameter) == t.Callable:
+            micheline = {
+                "prim": "lambda",
+                "args": [
+                    self.compile_type(parameter.param_type),
+                    self.compile_type(parameter.return_type),
+                ]
+            }
         else:
             breakpoint()
             return NotImplementedError

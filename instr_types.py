@@ -54,6 +54,13 @@ class Dict(Type):
         self.value_type = value_type
 
 
+class Callable(Type):
+    def __init__(self, param_type: Type, return_type: Type, annotation: Optional[str] = None):
+        super().__init__(annotation)
+        self.param_type = param_type
+        self.return_type = return_type
+
+
 class TypeParser:
     def __init__(self):
         pass
@@ -78,9 +85,18 @@ class TypeParser:
         value_type = self.parse(dictionary.slice.value.elts[1], e)
         return Dict(key_type, value_type, annotation)
 
+    def parse_callable(self, dictionary: ast.Subscript, e, annotation):
+        key_type = self.parse(dictionary.slice.value.elts[0], e)
+        value_type = self.parse(dictionary.slice.value.elts[1], e)
+        return Callable(key_type, value_type, annotation)
+
     def parse_subscript(self, subscript: ast.Dict, e, annotation):
         if subscript.value.id == "Dict":
             return self.parse_dict(subscript, e, annotation)
+        if subscript.value.id == "Callable":
+            return self.parse_callable(subscript, e, annotation)
+        else:
+            raise NotImplementedError
 
     def parse(self, type_ast, e, annotation: Optional[str] = None) -> Type:
         if type(type_ast) == ast.Name:

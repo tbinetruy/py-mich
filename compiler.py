@@ -591,8 +591,9 @@ class Compiler:
             e.args[f.name] = arg_ast.arg
 
             # type argument
-            if arg_ast.annotation.id in e.records:
-                e.types[arg_ast.arg] = arg_ast.annotation.id
+            if type(arg_ast.annotation) == ast.Name:
+                if arg_ast.annotation.id in e.records:
+                    e.types[arg_ast.arg] = arg_ast.annotation.id
 
         prototype = self._get_function_prototype(f, e)
         arg_type, return_type = prototype.arg_type, prototype.return_type
@@ -2410,6 +2411,26 @@ False
         vm.execute(micheline)
         self.assertEqual(vm.stack.peek(), BoolType(False))
 
+    def test_callback(self):
+        source = """
+def apply(f: Callable[int, int], x: int) -> int:
+    return f(x)
+
+def increment(x: int) -> int:
+    return x + 1
+
+apply(increment, 10)
+        """
+        from macro_expander import TuplifyFunctionArguments
+        macro_expander = TuplifyFunctionArguments()
+        compiler = Compiler(source)
+        new_ast = macro_expander.visit(compiler.ast)
+        new_ast.body = macro_expander.dataclasses + compiler.ast.body
+        compiler.ast = new_ast
+        micheline = compiler.compile_expression()
+        vm = VM()
+        vm.execute(micheline)
+        self.assertEqual(vm.stack.peek(), IntType(11))
 
 
 for TestSuite in [
