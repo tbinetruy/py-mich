@@ -20,10 +20,7 @@ class Contract:
 
         self.total_supply = self.total_supply + value
 
-        if _to in self.tokens:
-            self.tokens[_to] = self.tokens[_to] + value
-        else:
-            self.tokens[_to] = value
+        self.tokens[_to] = self.tokens.get(_to, 0) + value
 
     def approve(self, spender: address, value: int):
         allowance_key = AllowanceKey(SENDER, spender)
