@@ -460,11 +460,13 @@ class Compiler:
         return is_tz_address or is_kt_address
 
     @debug
-    def compile_constant(self, constant: ast.Constant, e: Env) -> List[Instr]:
+    def compile_constant(self, constant: ast.Constant, e: Env, force_type = None) -> List[Instr]:
         e.sp += 1  # Account for PUSH
 
         constant_type: t.Type = t.Int()
-        if type(constant.value) == str:
+        if force_type != None:
+            constant_type = force_type
+        elif type(constant.value) == str:
             if self._is_string_address(constant.value):
                 constant_type = t.Address()
             else:
@@ -646,6 +648,10 @@ class Compiler:
             Instr("IF_NONE", [default, []], {}),
         ]
 
+
+    def _compile_mutez(self, f: ast.Call, e: Env) -> List[Instr]:
+        return self.compile_constant(f.args[0], e, force_type=t.Mutez())
+
     @debug
     def compile_fcall(self, f: ast.Call, e: Env):
         # check if we are calling .dict on a dictionary
@@ -654,6 +660,9 @@ class Compiler:
             instructions += self._compile_dict_safe_get(f.args[0], f.args[1], e)
             return instructions
 
+        # check if we are instantiating a mutez
+        if f.func.id == "mutez":
+            return self._compile_mutez(f, e)
 
         # if dealing with a record instantiation, compile as such
         if f.func.id in e.records.keys():

@@ -21,6 +21,11 @@ class Int(Type):
         return "int"
 
 
+class Mutez(Type):
+    def __str__(self):
+        return "mutez"
+
+
 class String(Type):
     def __str__(self):
         return "string"

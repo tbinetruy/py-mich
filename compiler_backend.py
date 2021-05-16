@@ -22,6 +22,10 @@ class CompilerBackend:
             micheline = {
                 "prim": "int",
             }
+        elif type(parameter) == t.Mutez:
+            micheline = {
+                "prim": "mutez",
+            }
         elif type(parameter) == t.String:
             micheline = {
                 "prim": "string",
