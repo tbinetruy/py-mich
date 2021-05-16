@@ -125,6 +125,8 @@ class CompilerBackend:
             if type(constant_type) == t.Bool:
                 pushed_constant = {"prim": "True" if constant else "False"}
             else:
+                if type(constant_type) == t.Mutez:
+                    constant_type = "int"
                 pushed_constant = {str(constant_type): str(constant)}
             return {"prim": "PUSH", "args": [type_name, pushed_constant]}
         elif instruction.name == "SWAP":

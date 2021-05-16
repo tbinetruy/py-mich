@@ -87,6 +87,8 @@ class TypeParser:
             return Bool(annotation)
         if name.id == 'unit':
             return Unit(annotation)
+        if name.id == 'mutez':
+            return Mutez(annotation)
         if name.id in e.records.keys():
             return e.records[name.id].get_type()
         raise NotImplementedError
