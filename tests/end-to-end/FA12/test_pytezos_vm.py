@@ -34,6 +34,47 @@ class TestContract(unittest.TestCase):
         except MichelsonRuntimeError as e:
             self.assertEqual(e.format_stdout(), "FAILWITH: 'Only owner can mint'")
 
+    def test_getAllowance(self):
+        micheline = Compiler(source).compile_contract()
+        vm = VM()
+        vm.load_contract(micheline)
+
+        storage = vm.contract.storage.dummy()
+        storage['owner'] = vm.context.sender
+
+        investor = "KT1EwUrkbmGxjiRvmEAa8HLGhjJeRocqVTFi"
+        amount = 10
+        initial_storage = {"owner": vm.context.sender, "total_supply": amount, "tokens": {}, "allowances": {(vm.context.sender, investor): amount}}
+        res = vm.contract.getAllowance({"owner": vm.context.sender, "spender": investor, "contract_2": None}).callback_view(storage= initial_storage)
+        self.assertEqual(res, 10)
+
+        res = vm.contract.getAllowance({"owner": vm.context.sender, "spender": investor, "contract_2": None}).callback_view()
+        self.assertEqual(res, 0)
+
+    def test_getBalance(self):
+        micheline = Compiler(source).compile_contract()
+        vm = VM()
+        vm.load_contract(micheline)
+
+        storage = vm.contract.storage.dummy()
+        storage['owner'] = vm.context.sender
+
+        investor = "KT1EwUrkbmGxjiRvmEAa8HLGhjJeRocqVTFi"
+        amount = 10
+        initial_storage = {"owner": vm.context.sender, "total_supply": amount, "tokens": {investor: amount}, "allowances": {}}
+        res = vm.contract.getBalance({"owner": investor, "contract_1": None}).callback_view(storage= initial_storage)
+        self.assertEqual(res, 10)
+
+        res = vm.contract.getBalance({"owner": vm.context.sender, "contract_1": None}).callback_view()
+        self.assertEqual(res, 0)
+
+    def test_getTotalSupply(self):
+        micheline = Compiler(source).compile_contract()
+        vm = VM()
+        vm.load_contract(micheline)
+
+        self.assertEqual(vm.contract.getTotalSupply().callback_view(), 0)
+
     def test_transfer(self):
         micheline = Compiler(source).compile_contract()
         vm = VM()
