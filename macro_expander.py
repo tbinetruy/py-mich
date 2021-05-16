@@ -102,7 +102,7 @@ class TuplifyFunctionArguments(ast.NodeTransformer):
             return node
 
         fun_name = node.func.id
-        if len(node.args) > 1 and fun_name not in self.defined_class_names:
+        if len(node.args) > 1 and fun_name not in self.defined_class_names and fun_name != "transaction":
             node.args = [
                 ast.Call(
                     func=ast.Name(id=self.env[fun_name], ctx=ast.Load()),
@@ -128,11 +128,14 @@ class AssignAllFunctionCalls(ast.NodeTransformer):
     def visit_Expr(self, node: ast.Expr) -> Any:
         """Funcalls which's return value are not assigned are wrapped in an ast.Expr"""
         if type(node.value) == ast.Call:
-            call_node = node.value
-            return ast.Assign(
-                targets=[ast.Name(id='__placeholder__', ctx=ast.Store())],
-                value=call_node,
-                type_comment=None)
+            if type(node.value.func) == ast.Name and node.value.func.id == "transaction":
+                pass
+            else:
+                call_node = node.value
+                return ast.Assign(
+                    targets=[ast.Name(id='__placeholder__', ctx=ast.Store())],
+                    value=call_node,
+                    type_comment=None)
 
         return node
 

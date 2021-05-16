@@ -2,7 +2,7 @@ import ast
 import pprint
 import unittest
 from dataclasses import dataclass
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Union
 
 from pytezos.context.impl import ExecutionContext
 from pytezos.michelson.instructions.adt import *
@@ -649,6 +649,47 @@ class Compiler:
         ]
 
 
+    def _initialize_operations(self, e: Env) -> List[Instr]:
+        instructions = []
+
+        if "__OPERATIONS__" not in e.vars:
+            instructions += [
+                Instr("NIL", [t.Operation()], {})
+            ]
+            e.sp += 1  # account for pushing empty list
+            e.vars["__OPERATIONS__"] = e.sp
+
+        return instructions
+
+    def _compile_transaction(self, f: ast.Call, e: Env) -> List[Instr]:
+        # fetch the operation list
+        instructions = self._fetch_variable("__OPERATIONS__", e)
+
+        # create the transaction
+        for arg in f.args:
+            instructions += self._compile(arg, e)
+
+        # add the transaction to the list
+        instructions += [
+            Instr("TRANSFER_TOKENS", [], {}),
+            Instr("CONS", [], {}),
+        ]
+
+        e.sp -= 2  # account for transfer_tokens
+        e.sp -= 1  # account for cons
+
+
+        # replace __OPERATIONS__
+        operations_addr = e.vars["__OPERATIONS__"]
+        free_old_ops_instructions, e = self.free_var("__OPERATIONS__", e)
+        instructions += free_old_ops_instructions
+        instructions += [
+            Instr("DUG", [e.sp - operations_addr], {}),
+        ]
+        e.vars["__OPERATIONS__"] = operations_addr
+
+        return instructions
+
     def _compile_mutez(self, f: ast.Call, e: Env) -> List[Instr]:
         return self.compile_constant(f.args[0], e, force_type=t.Mutez())
 
@@ -659,6 +700,10 @@ class Compiler:
             instructions = self._compile(f.func.value, e)
             instructions += self._compile_dict_safe_get(f.args[0], f.args[1], e)
             return instructions
+
+        # check if we are calling transaction
+        if f.func.id == "transaction":
+            return self._compile_transaction(f, e)
 
         # check if we are instantiating a mutez
         if f.func.id == "mutez":
@@ -732,20 +777,35 @@ class Compiler:
         #      laying between the storage and the parameter (hence the +1 above)
         e.vars[f.args.args[0].arg] = e.sp
 
-        # type argument
-        if f.args.args[0].annotation.id in e.records:
-            e.types[f.args.args[0].arg] = f.args.args[0].annotation.id
 
-        block_instructions = self._compile_block(f.body, e)
+        init_operations_instructions = self._initialize_operations(e)
+
+        # type argument if record
+        if type(f.args.args[0].annotation) == ast.Name:
+            if f.args.args[0].annotation.id in e.records:
+                e.types[f.args.args[0].arg] = f.args.args[0].annotation.id
+
+        block_instructions, operations_addr = self._compile_block(f.body, e, return_operations=True)
+        if operations_addr:
+            e.vars["__OPERATIONS__"] = operations_addr
+
         entrypoint_instructions = block_instructions
 
-        free_vars_instructions = self.free_vars(list(e.vars.keys()), e)
-        epilogue = [
-            Instr("NIL", [t.Operation()], {}),
+        if "__OPERATIONS__" in e.vars:
+            get_operations = self._fetch_variable("__OPERATIONS__", e)
+            pass
+        else:
+            get_operations = [Instr("NIL", [t.Operation()], {})]
+            e.sp += 1
+
+        epilogue = get_operations + [
             Instr("PAIR", [], {}),
         ]
+        e.sp -= 1
 
-        entrypoint_instructions = entrypoint_instructions + free_vars_instructions + epilogue
+        free_vars_instructions = self.free_vars(list(e.vars.keys()), e)
+
+        entrypoint_instructions = init_operations_instructions + entrypoint_instructions + epilogue + free_vars_instructions
 
         prototype = self._get_function_prototype(f, e)
         entrypoint = Entrypoint(prototype, entrypoint_instructions)
@@ -765,11 +825,13 @@ class Compiler:
 
         return free_var_instructions
 
-    def _compile_block(self, block_ast: List[ast.AST], block_env: Env) -> List[Instr]:
+    def _compile_block(self, block_ast: List[ast.AST], block_env: Env, return_operations = False) -> Union[List[Instr], Tuple[List[Instr], Union[bool, int]]]:
         """frees newly declared variables at the end of the block, hence °e°
         should be the same befor and after the block"""
         # get init env keys
         init_var_names = set(block_env.vars.keys())
+        if return_operations:
+            init_var_names.add("__OPERATIONS__")
 
         # iterate body instructions
         block_instructions = []
@@ -784,7 +846,11 @@ class Compiler:
 
         free_var_instructions = self.free_vars(intersection, block_env)
 
-        return block_instructions + free_var_instructions
+        instructions = block_instructions + free_var_instructions
+        if return_operations:
+            return instructions, block_env.vars.get("__OPERATIONS__", None)
+
+        return instructions
 
     @debug
     def compile_storage(self, storage_ast, e: Env):
@@ -1602,6 +1668,42 @@ my_storage # get storage
 
 
 class TestContract(unittest.TestCase):
+    def skip_test_callback_view_no_param(self):
+        source = f"""
+class Contract:
+    counter: int
+    admin: address
+
+    def update_counter(self, new_counter: int):
+        self.counter = new_counter
+
+    def get_counter(self, contract: Contract[int]):
+        transaction(contract, mutez(0), self.counter)
+        """
+        compiler = Compiler(source)
+        micheline = compiler.compile_contract()
+        vm = VM()
+        vm.load_contract(micheline)
+        self.assertEqual(vm.contract.get_counter().callback_view(), 0)
+
+    def test_callback_view_with_param(self):
+        source = f"""
+class Contract:
+    counters: Dict[str, int]
+    admin: address
+
+    def update_counter(self, counter_name: str, count: int):
+        self.counters[counter_name] = count
+
+    def get_counter(self, counter_name: str, contract: Contract[int]):
+        transaction(contract, mutez(0), self.counters.get(counter_name, 0))
+        """
+        compiler = Compiler(source)
+        micheline = compiler.compile_contract()
+        vm = VM()
+        vm.load_contract(micheline)
+        self.assertEqual(vm.contract.get_counter({"counter_name": "foo", "contract_1": None}).callback_view(), 0)
+
     def test_storage_inside_contract(self):
         source = f"""
 class Contract:
@@ -2048,7 +2150,7 @@ class Contract:
         else:
             a = a + a
             self.storage.counter = self.storage.counter + a
-            return self.storage
+        return self.storage
 
     def update_owner(new_owner: address) -> int:
         self.storage.owner = new_owner

@@ -62,6 +62,13 @@ class CompilerBackend:
                     self.compile_type(parameter.return_type),
                 ]
             }
+        elif type(parameter) == t.Contract:
+            micheline = {
+                "prim": "contract",
+                "args": [
+                    self.compile_type(parameter.param_type),
+                ]
+            }
         else:
             breakpoint()
             return NotImplementedError
@@ -75,6 +82,8 @@ class CompilerBackend:
         return micheline
 
     def compile_instruction(self, instruction: Instr):
+        if instruction.name == "TRANSFER_TOKENS":
+            return {"prim": "TRANSFER_TOKENS"}
         if instruction.name == "ADD":
             return {"prim": "ADD"}
         if instruction.name == "SUB":

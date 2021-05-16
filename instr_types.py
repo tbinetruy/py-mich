@@ -66,6 +66,12 @@ class Callable(Type):
         self.return_type = return_type
 
 
+class Contract(Type):
+    def __init__(self, param_type: Type, annotation: Optional[str] = None):
+        super().__init__(annotation)
+        self.param_type = param_type
+
+
 class TypeParser:
     def __init__(self):
         pass
@@ -95,11 +101,17 @@ class TypeParser:
         value_type = self.parse(dictionary.slice.value.elts[1], e)
         return Callable(key_type, value_type, annotation)
 
+    def parse_contract(self, contract: ast.Subscript, e, annotation):
+        param_type = self.parse(contract.slice.value, e)
+        return Contract(param_type)
+
     def parse_subscript(self, subscript: ast.Dict, e, annotation):
         if subscript.value.id == "Dict":
             return self.parse_dict(subscript, e, annotation)
         if subscript.value.id == "Callable":
             return self.parse_callable(subscript, e, annotation)
+        if subscript.value.id == "Contract":
+            return self.parse_contract(subscript, e, annotation)
         else:
             raise NotImplementedError
 
