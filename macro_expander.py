@@ -485,8 +485,9 @@ assert increment(10) == 11
         new_f_ast = ast.fix_missing_locations(new_f_ast)
         local_vars = {}
         eval(compile(new_f_ast, '', mode='exec'), local_vars)
-        source = "add(addParam(1, 2, add(addParam(3, 4, 5))))"
-        self.assertEqual(eval(source), 15)
+        add = local_vars["add"]
+        addParam = local_vars["addParam"]
+        self.assertEqual(add(addParam(1, 2, add(addParam(3, 4, 5)))), 15)
 
 
 class TestAssignAllFunctionCallsTests(unittest.TestCase):
