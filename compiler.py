@@ -2030,53 +2030,38 @@ class Contract:
         self.assertEqual(new_storage, expected_storage)
 
     def test_election(self):
-        admin =  "tzaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         source = f"""
+def require(condition: bool, message: str) -> int:
+    if not condition:
+        raise Exception(message)
+
+    return 0
+
+
 @dataclass
-class Storage:
+class Contract:
     admin: address
     manifest_url: str
     manifest_hash: str
-    open: str
-    close: str
+    _open: str
+    _close: str
     artifacts_url: str
     artifacts_hash: str
 
-@dataclass
-class OpenArg:
-    open: str
-    manifest_url: str
-    manifest_hash: str
+    def open(self, _open: str, manifest_url: str, manifest_hash: str):
+        require(SENDER == self.admin, "Only admin can call this entrypoint")
+        self._open = _open
+        self.manifest_url = manifest_url
+        self.manifest_hash = manifest_hash
 
-@dataclass
-class ArtifactsArg:
-    artifacts_url: str
-    artifacts_hash: str
+    def close(self, _close: str):
+        require(SENDER == self.admin, "Only admin can call this entrypoint")
+        self._close = _close
 
-class Contract:
-    def deploy():
-        return Storage("{admin}", '', '', '', '', '', '')
-
-    def open(params: OpenArg):
-        if SENDER != self.storage.admin:
-            raise Exception("Only owner can call open")
-
-        self.storage.open = params.open
-        self.storage.manifest_url = params.manifest_url
-        self.storage.manifest_hash = params.manifest_hash
-
-        return self.storage
-
-    def close(params: str):
-        self.storage.close = params
-
-        return self.storage
-
-    def artifacts(params: ArtifactsArg):
-        self.storage.artifacts_url = params.artifacts_url
-        self.storage.artifacts_hash = params.artifacts_hash
-
-        return self.storage
+    def artifacts(self, artifacts_url: str, artifacts_hash: str):
+        require(SENDER == self.admin, "Only admin can call this entrypoint")
+        self.artifacts_url = artifacts_url
+        self.artifacts_hash = artifacts_hash
         """
         compiler = Compiler(source)
         micheline = compiler.compile_contract()
@@ -2086,19 +2071,19 @@ class Contract:
         init_storage['admin'] = vm.context.sender
 
         try:
-            vm.contract.open({"open": "foo", "manifest_url": "bar", "manifest_hash": "baz"}).interpret(storage=init_storage)
+            vm.contract.open({"_open": "foo", "manifest_url": "bar", "manifest_hash": "baz"}).interpret(storage=init_storage)
             assert 0
         except MichelsonRuntimeError as e:
-            self.assertEqual(e.format_stdout(), "FAILWITH: 'Only owner can call open'")
+            self.assertEqual(e.format_stdout(), "FAILWITH: 'Only admin can call this entrypoint'")
 
-        new_storage = vm.contract.open({"open": "foo", "manifest_url": "bar", "manifest_hash": "baz"}).interpret(storage=init_storage, sender=vm.context.sender).storage
+        new_storage = vm.contract.open({"_open": "foo", "manifest_url": "bar", "manifest_hash": "baz"}).interpret(storage=init_storage, sender=vm.context.sender).storage
         expected_storage = init_storage.copy()
-        expected_storage["open"] = "foo"
+        expected_storage["_open"] = "foo"
         expected_storage["manifest_url"] = "bar"
         expected_storage["manifest_hash"] = "baz"
         self.assertEqual(new_storage, expected_storage)
 
-        expected_storage["close"] = "foobar"
+        expected_storage["_close"] = "foobar"
         new_storage = vm.contract.close("foobar").interpret(storage=new_storage, sender=vm.context.sender).storage
         self.assertEqual(new_storage, expected_storage)
 
