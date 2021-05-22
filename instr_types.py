@@ -122,4 +122,6 @@ class TypeParser:
             return self.parse_name(type_ast, e, annotation)
         if type(type_ast) == ast.Subscript:
             return self.parse_subscript(type_ast, e, annotation)
+        if type_ast == None:
+            return Unit()
         raise NotImplementedError
