@@ -337,10 +337,12 @@ class C:
 class TestTuplifyFunctionArguments(unittest.TestCase):
     def test_new_function_evaluates(self):
         source = """
-def add(x: int, y: int, z: int):
+from dataclasses import dataclass
+
+def add(x: int, y: int, z: int) -> int:
     return x + y + z
 
-def increment(x: int):
+def increment(x: int) -> int:
     return add(x, 1, 0)
 
 assert add(1, 2, add(3, 4, 5)) == 15
@@ -349,9 +351,10 @@ assert increment(10) == 11
         f_ast = ast.parse(source)
         pass1 = TuplifyFunctionArguments()
         new_f_ast = pass1.visit(f_ast)
-        new_f_ast.body = pass1.dataclasses + new_f_ast.body
+        new_f_ast.body = new_f_ast.body[:1] + pass1.dataclasses + new_f_ast.body[1:]
         new_f_ast = ast.fix_missing_locations(new_f_ast)
-        eval(compile(new_f_ast, '', mode='exec'))
+        local_vars = {}
+        eval(compile(new_f_ast, '', mode='exec'), local_vars)
         source = "add(addParam(1, 2, add(addParam(3, 4, 5))))"
         self.assertEqual(eval(source), 15)
 
