@@ -54,12 +54,12 @@ class Contract:
 
         self.tokens[_to] = to_balance + value
 
-    def getAllowance(self, owner: address, spender: address, contract: Contract[int]):
-        transaction(contract, mutez(0), self.allowances.get(AllowanceKey(owner, spender), 0))
+    def getAllowance(self, owner: address, spender: address) -> int:
+        return self.allowances.get(AllowanceKey(owner, spender), 0)
 
-    def getTotalSupply(self, contract: Contract[int]):
-        transaction(contract, mutez(0), self.total_supply)
+    def getBalance(self, owner: address) -> int:
+        return self.tokens.get(owner, 0)
 
-    def getBalance(self, owner: address, contract: Contract[int]):
-        transaction(contract, mutez(0), self.tokens.get(owner, 0))
+    def getTotalSupply(self) -> int:
+        return self.total_supply
 

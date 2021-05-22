@@ -1704,6 +1704,25 @@ class Contract:
         vm.load_contract(micheline)
         self.assertEqual(vm.contract.get_counter({"counter_name": "foo", "contract_1": None}).callback_view(), 0)
 
+    def test_callback_view_macro_with_param(self):
+        source = f"""
+class Contract:
+    counters: Dict[str, int]
+    admin: address
+
+    def update_counter(self, counter_name: str, count: int):
+        self.counters[counter_name] = count
+
+    def get_counter(self, counter_name: str) -> int:
+        return self.counters.get(counter_name, 0)
+        """
+        compiler = Compiler(source)
+        micheline = compiler.compile_contract()
+        vm = VM()
+        vm.load_contract(micheline)
+        init_storage = {"admin": vm.context.sender, "counters": {"foo": 10}}
+        self.assertEqual(vm.contract.get_counter({"counter_name": "foo", "contract_1": None}).callback_view(init_storage), 10)
+
     def test_storage_inside_contract(self):
         source = f"""
 class Contract:
@@ -1808,11 +1827,11 @@ class Contract:
     def deploy():
         return 0
 
-    def add_positives(self, x: int, y: int) -> int:
+    def add_positives(self, x: int, y: int):
         require(x > 0, "x is not a positive integer")
         return x + y
 
-    def sub(self, x: int) -> int:
+    def sub(self, x: int):
         return x
         """
         compiler = Compiler(source)
@@ -1835,10 +1854,10 @@ class Contract:
     def deploy():
         return 0
 
-    def add(param: AddParam) -> int:
+    def add(param: AddParam):
         return param.x + param.y
 
-    def sub(x: int) -> int:
+    def sub(x: int):
         return x
         """
         micheline = Compiler(source).compile_contract()
@@ -1865,7 +1884,7 @@ class Contract:
     def deploy():
         return Storage({}, 0)
 
-    def mint(param: ChangeSupplyParam) -> Storage:
+    def mint(param: ChangeSupplyParam):
         self.storage.total_supply = self.storage.total_supply + param.amount
 
         balances = self.storage.balances
@@ -1879,7 +1898,7 @@ class Contract:
 
         return self.storage
 
-    def burn(param: ChangeSupplyParam) -> Storage:
+    def burn(param: ChangeSupplyParam):
         self.storage.total_supply = self.storage.total_supply - param.amount
         return self.storage
         """
@@ -1917,10 +1936,10 @@ class Contract:
     def deploy():
         return 0
 
-    def add(param: AddParam) -> int:
+    def add(param: AddParam):
         return foo(param)
 
-    def sub(x: int) -> int:
+    def sub(x: int):
         return x
         """
         micheline = Compiler(source).compile_contract()
@@ -1962,20 +1981,20 @@ class Contract:
     def deploy():
         return Storage("{admin}", 0)
 
-    def add(param: int) -> Storage:
+    def add(param: int):
         _ = require(RequireArg(SENDER == self.storage.admin, "Only owner can call open"))
 
         self.storage.counter = self.storage.counter + param
         return self.storage
 
-    def sub(param: int) -> Storage:
+    def sub(param: int):
         if SENDER != self.storage.admin:
             raise Exception("Only owner can call open")
 
         self.storage.counter = self.storage.counter - param
         return self.storage
 
-    def quintuple(param: int) -> Storage:
+    def quintuple(param: int):
         _ = require(RequireArg(SENDER == self.storage.admin, "Only owner can call open"))
 
         self.storage.counter = double(self.storage.counter) + triple(self.storage.counter)
@@ -2038,7 +2057,7 @@ class Contract:
     def deploy():
         return Storage("{admin}", '', '', '', '', '', '')
 
-    def open(params: OpenArg) -> Storage:
+    def open(params: OpenArg):
         if SENDER != self.storage.admin:
             raise Exception("Only owner can call open")
 
@@ -2048,12 +2067,12 @@ class Contract:
 
         return self.storage
 
-    def close(params: str) -> Storage:
+    def close(params: str):
         self.storage.close = params
 
         return self.storage
 
-    def artifacts(params: ArtifactsArg) -> Storage:
+    def artifacts(params: ArtifactsArg):
         self.storage.artifacts_url = params.artifacts_url
         self.storage.artifacts_hash = params.artifacts_hash
 
@@ -2100,15 +2119,15 @@ class Contract:
     def deploy():
         return Storage(1, 2, 3)
 
-    def set_a(new_a: int) -> int:
+    def set_a(new_a: int):
         self.storage.a = new_a
         return self.storage
 
-    def set_b(new_b: int) -> int:
+    def set_b(new_b: int):
         self.storage.b = new_b
         return self.storage
 
-    def set_c(new_c: int) -> int:
+    def set_c(new_c: int):
         self.storage.c = new_c
         return self.storage
         """
@@ -2144,7 +2163,7 @@ class Contract:
     def deploy():
         return Storage("{owner}", "foo", 0)
 
-    def add(a: int) -> int:
+    def add(a: int):
         if a < 10:
             raise Exception('input smaller than 10')
         else:
@@ -2152,11 +2171,11 @@ class Contract:
             self.storage.counter = self.storage.counter + a
         return self.storage
 
-    def update_owner(new_owner: address) -> int:
+    def update_owner(new_owner: address):
         self.storage.owner = new_owner
         return self.storage
 
-    def update_name(new_name: str) -> int:
+    def update_name(new_name: str):
         self.storage.name = new_name
         return self.storage
         """
@@ -2196,10 +2215,10 @@ class Contract:
     def deploy():
         return Storage("foo", 0)
 
-    def add(a: int) -> int:
+    def add(a: int):
         return Storage(self.storage.owner, self.storage.counter + a)
 
-    def update_owner(new_owner: str) -> int:
+    def update_owner(new_owner: str):
         return Storage(new_owner, self.storage.counter)
         """
         micheline = Compiler(source).compile_contract()
@@ -2227,12 +2246,12 @@ class Contract:
     def deploy():
         return Storage(1, 0)
 
-    def add(a: int) -> int:
+    def add(a: int):
         b = 10
         new_storage = Storage(self.storage.owner_id, self.storage.counter + a + b)
         return new_storage
 
-    def update_owner_id(new_id: int) -> int:
+    def update_owner_id(new_id: int):
         return Storage(new_id, self.storage.counter)
         """
         micheline = Compiler(source).compile_contract()
@@ -2255,11 +2274,11 @@ class Contract:
     def deploy():
         return 0
 
-    def incrementByTwo(a: int) -> int:
+    def incrementByTwo(a: int):
         b = 1
         return a + b + 1
 
-    def bar(b: int) -> int:
+    def bar(b: int):
         return b
         """
         micheline = Compiler(source).compile_contract()

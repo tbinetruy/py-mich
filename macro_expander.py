@@ -1,8 +1,20 @@
 import ast
-from typing import Any
+from typing import Any, List
 from dataclasses import dataclass
 
 import unittest
+
+
+
+def _is_view(node) -> bool:
+    """A contract method is considered a view if has a return type annotation
+    and does not start with an underscore (_)"""
+    if type(node) == ast.FunctionDef and node.name[0] != "_" and node.returns is not None:
+        for body_el in node.body:
+            if type(body_el) == ast.Return:
+                return True
+
+    return False
 
 
 def make_dataclass(name, arguments_spec):
@@ -21,6 +33,84 @@ def make_dataclass(name, arguments_spec):
         ],
         decorator_list=[ast.Name(id='dataclass', ctx=ast.Load())]
     )
+
+
+class RewriteViews(ast.NodeTransformer):
+    """
+    Input
+    -----
+
+    def myView(self, arg1: type1, ..., argN: typeN) -> return_type:
+        return expr(arg1, ..., argN)
+
+    Output
+    -----
+
+    def myView(self, arg1: type1, ..., argN: typeN, __callback__: Contract[return_type]):
+        transaction(__callback__, mutez(0), self.total_supply)
+
+    """
+    def _transform_return(self, node: ast.Return) -> ast.Call:
+        return ast.Call(
+            func=ast.Name(id='transaction', ctx=ast.Load()),
+            args=[
+                ast.Name(id='__callback__', ctx=ast.Load()),
+                ast.Call(
+                    func=ast.Name(id='mutez', ctx=ast.Load()),
+                    args=[ast.Constant(value=0, kind=None)],
+                    keywords=[]
+                ),
+                node.value
+            ],
+            keywords=[]
+        )
+
+    def _transform_block(self, nodes) -> List[Any]:
+        new_nodes = []
+        for node in nodes:
+            if type(node) == ast.Return:
+                new_nodes.append(self._transform_return(node))
+            #elif type(node) == ast.If:
+            #    raise NotImplementedError
+            #elif type(node) == ast.For:
+            #    raise NotImplementedError
+            else:
+                new_nodes.append(node)
+
+        return new_nodes
+
+    def _expand_view(self, node: ast.FunctionDef) -> Any:
+        # add `contract_callback: Contract[return_type]` to method parameter
+        callback_annotation = ast.Subscript(
+            value=ast.Name(id='Contract', ctx=ast.Load()),
+            slice=ast.Index(
+                value=node.returns
+            ),
+            ctx=ast.Load()
+        )
+        callback_argument = ast.arg(arg="__callback__", annotation=callback_annotation)
+        node.args.args.append(callback_argument)
+
+        # remove the return type annotation
+        node.returns = None
+
+        # transform all return expressions into `transaction` function call
+        node.body = self._transform_block(node.body)
+
+
+        return node
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> Any:
+        new_body = []
+        for body_el in node.body:
+            if _is_view(body_el):
+                new_body.append(self._expand_view(body_el))
+            else:
+                new_body.append(body_el)
+
+        node.body = new_body
+
+        return node
 
 
 class TuplifyFunctionArguments(ast.NodeTransformer):
@@ -195,7 +285,7 @@ class FactorOutStorage(ast.NodeTransformer):
         counter: int
         admin: address
 
-        def update_counter(self, new_counter: int) -> int:
+        def update_counter(self, new_counter: int):
             self.counter = 1
 
     Output
@@ -210,12 +300,13 @@ class FactorOutStorage(ast.NodeTransformer):
         def deploy():
             return Storage()
 
-        def update_counter(self, new_counter: int) -> int:
+        def update_counter(self, new_counter: int):
             self.storage.counter = 1
 
             return self.storage
     """
     def visit_ClassDef(self, node: ast.ClassDef) -> Any:
+        # only expand contract methods
         if node.name != "Contract":
             return node
 
@@ -243,7 +334,8 @@ class FactorOutStorage(ast.NodeTransformer):
         for body_node in node.body:
             new_body_node = ExpandStorageInEntrypoints().visit(body_node)
             if type(body_node) == ast.FunctionDef:
-                body_node.returns = ast.Name(id='Storage', ctx=ast.Load())
+                if not body_node.returns:
+                    body_node.returns = ast.Name(id='Storage', ctx=ast.Load())
                 return_storage_node = ast.Return(
                     value=ast.Attribute(
                         value=ast.Name(id='self', ctx=ast.Load()),
@@ -284,18 +376,56 @@ class PlaceBackStorageDataclass(ast.NodeTransformer):
         return node
 
 def macro_expander(source_ast):
-    pass1 = FactorOutStorage()
-    pass2 = RemoveSelfArgFromMethods()
-    pass3 = TuplifyFunctionArguments()
-    pass4 = AssignAllFunctionCalls()
+    pass1 = RewriteViews()
+    pass2 = FactorOutStorage()
+    pass3 = RemoveSelfArgFromMethods()
+    pass4 = TuplifyFunctionArguments()
+    pass5 = AssignAllFunctionCalls()
     new_ast = pass1.visit(source_ast)
     new_ast = pass2.visit(new_ast)
     new_ast = pass3.visit(new_ast)
     new_ast = pass4.visit(new_ast)
-    new_ast.body = pass3.dataclasses + new_ast.body
-    if hasattr(pass1, 'storage_dataclass'):
-        new_ast = PlaceBackStorageDataclass(pass1.storage_dataclass).visit(new_ast)
+    new_ast = pass5.visit(new_ast)
+    new_ast.body = pass4.dataclasses + new_ast.body
+    if hasattr(pass2, 'storage_dataclass'):
+        new_ast = PlaceBackStorageDataclass(pass2.storage_dataclass).visit(new_ast)
     return ast.fix_missing_locations(new_ast)
+
+
+class TestRewriteViews(unittest.TestCase):
+    def test_function_call_in_block(self):
+        source = """
+class Contract:
+    def myView(self, arg1: type1, arg2: type2) -> return_type:
+        return f(arg1, arg2)
+        """
+        source_ast = ast.parse(source)
+        new_ast = RewriteViews().visit(source_ast)
+        new_ast = ast.fix_missing_locations(new_ast)
+        view_ast = new_ast.body[0].body[0]
+
+        # test function prototype
+        self.assertEqual(view_ast.returns, None)
+        last_argument = view_ast.args.args[-1]
+        self.assertEqual(last_argument.arg, '__callback__')
+        self.assertEqual(type(last_argument.annotation), ast.Subscript)
+        self.assertEqual(type(last_argument.annotation.value), ast.Name)
+        self.assertEqual(last_argument.annotation.value.id, 'Contract')
+        self.assertEqual(type(last_argument.annotation.slice), ast.Index)
+        self.assertEqual(type(last_argument.annotation.slice.value), ast.Name)
+        self.assertEqual(last_argument.annotation.slice.value.id, 'return_type')
+
+        # test transaction call
+        transaction = view_ast.body[-1]
+        self.assertEqual(transaction.func.id, "transaction")
+        self.assertEqual(type(transaction.args[0]), ast.Name)
+        self.assertEqual(transaction.args[0].id, "__callback__")
+        self.assertEqual(type(transaction.args[1]), ast.Call)
+        self.assertEqual(transaction.args[1].func.id, "mutez")
+        self.assertEqual(type(transaction.args[1].args[0]), ast.Constant)
+        self.assertEqual(transaction.args[1].args[0].value, 0)
+        return_value = ast.parse(source).body[0].body[0].body[0].value
+        self.assertEqual(ast.dump(transaction.args[2]), ast.dump(return_value))
 
 
 class TestFactorOutStorage(unittest.TestCase):
@@ -377,6 +507,7 @@ assert y == 1
 
 
 for TestSuite in [
+        TestRewriteViews,
         TestTuplifyFunctionArguments,
         TestAssignAllFunctionCallsTests,
         TestRemoveSelfArgFromMethods,
