@@ -1668,7 +1668,7 @@ my_storage # get storage
 
 
 class TestContract(unittest.TestCase):
-    def skip_test_callback_view_no_param(self):
+    def test_callback_view_no_param(self):
         source = f"""
 class Contract:
     counter: int
